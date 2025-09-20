@@ -9,10 +9,7 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  // Allow all hosts for Replit proxy compatibility
-  experimental: {
-    allowedHosts: true,
-  },
+  // Replit proxy compatibility is handled by environment and hostname binding
   async headers() {
     return [
       {
