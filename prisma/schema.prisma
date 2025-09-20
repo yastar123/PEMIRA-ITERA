@@ -18,7 +18,7 @@ model User {
   prodi       String
   gender      String
   phone       String?
-  passwordHash  String   @map("passwordhash")
+  password      String
   role        Role     @default(VOTER)
   hasVoted    Boolean  @default(false)
   createdAt   DateTime @default(now())
