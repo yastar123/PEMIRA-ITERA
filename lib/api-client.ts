@@ -4,7 +4,7 @@ export class ApiClient {
 
   private static async request(endpoint: string, options: RequestInit = {}) {
     const url = `${this.baseUrl}${endpoint}`
-    
+
     const response = await fetch(url, {
       headers: {
         'Content-Type': 'application/json',
@@ -77,24 +77,78 @@ export class ApiClient {
     return this.request('/candidates')
   }
 
-  static async createCandidate(candidateData: any) {
-    return this.request('/candidates', {
+  static async createCandidate(data: any) {
+    console.log('📤 Creating candidate:', data)
+
+    const response = await fetch('/api/candidates', {
       method: 'POST',
-      body: JSON.stringify(candidateData),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({
+        name: data.name?.trim(),
+        nim: data.nim?.trim(),
+        prodi: data.prodi?.trim(),
+        visi: data.visi?.trim(),
+        misi: data.misi?.trim(),
+        photo: data.photo?.trim() || null
+      })
     })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Request failed' }))
+      throw new Error(error.error || 'Request failed')
+    }
+
+    return response.json()
   }
 
-  static async updateCandidate(candidateId: string, data: any) {
-    return this.request(`/candidates/${candidateId}`, {
+  // Update candidate
+  static async updateCandidate(id: string, data: any) {
+    console.log('📤 Updating candidate:', id, data)
+
+    const cleanData: any = {}
+    if (data.name !== undefined) cleanData.name = data.name?.trim()
+    if (data.nim !== undefined) cleanData.nim = data.nim?.trim()
+    if (data.prodi !== undefined) cleanData.prodi = data.prodi?.trim()
+    if (data.visi !== undefined) cleanData.visi = data.visi?.trim()
+    if (data.misi !== undefined) cleanData.misi = data.misi?.trim()
+    if (data.photo !== undefined) cleanData.photo = data.photo?.trim() || null
+    if (data.isActive !== undefined) cleanData.isActive = data.isActive
+
+    const response = await fetch(`/api/candidates/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(data),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify(cleanData)
     })
+
+    const result = await response.json()
+    console.log('📥 Server response:', result)
+
+    if (!response.ok) {
+      throw new Error(result.error || 'Failed to update candidate')
+    }
+
+    return result
   }
 
-  static async deleteCandidate(candidateId: string) {
-    return this.request(`/candidates/${candidateId}`, {
+  // Delete candidate
+  static async deleteCandidate(id: string) {
+    const response = await fetch(`/api/candidates/${id}`, {
       method: 'DELETE',
+      credentials: 'include'
     })
+
+    if (!response.ok) {
+      const result = await response.json()
+      throw new Error(result.error || 'Failed to delete candidate')
+    }
+
+    return response.json()
   }
 
   // Voting session methods
@@ -126,4 +180,7 @@ export class ApiClient {
   static async getVotes() {
     return this.request('/votes')
   }
+
+
+
 }
