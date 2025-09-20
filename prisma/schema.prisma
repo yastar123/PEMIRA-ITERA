@@ -8,6 +8,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
 }
 
 model User {
@@ -18,7 +19,7 @@ model User {
   prodi       String
   gender      String
   phone       String?
-  password      String
+  password    String
   role        Role     @default(VOTER)
   hasVoted    Boolean  @default(false)
   createdAt   DateTime @default(now())

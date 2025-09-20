@@ -1,16 +1,20 @@
-// Simple session management for demo - in production use Redis or database
-const sessions = new Map<string, string>()
+import jwt from 'jsonwebtoken'
+
+const SECRET_KEY = process.env.JWT_SECRET || 'your-secret-key'
 
 export function createSession(userId: string): string {
-  const sessionToken = crypto.randomUUID()
-  sessions.set(sessionToken, userId)
-  return sessionToken
+  return jwt.sign(
+    { userId },
+    SECRET_KEY,
+    { expiresIn: '7d' }
+  )
 }
 
-export function getSession(token: string): string | null {
-  return sessions.get(token) || null
-}
-
-export function deleteSession(token: string): void {
-  sessions.delete(token)
+export function verifySession(token: string): string | null {
+  try {
+    const payload = jwt.verify(token, SECRET_KEY) as { userId: string }
+    return payload.userId
+  } catch (error) {
+    return null
+  }
 }

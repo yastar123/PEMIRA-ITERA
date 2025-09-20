@@ -2,27 +2,36 @@ import { createClient } from "@/lib/supabase/server"
 import type { User } from "@/lib/types"
 
 export async function getCurrentUser(): Promise<User | null> {
-  const supabase = await createClient()
+  try {
+    const supabase = await createClient()
 
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
 
-  if (error || !user) {
+    if (authError || !user) {
+      return null
+    }
+
+    const { data: userData, error: userError } = await supabase
+      .from("User")
+      .select("*")
+      .eq("email", user.email)
+      .single()
+
+    if (userError || !userData) {
+      return null
+    }
+
+    return userData
+  } catch (error) {
+    console.error('Get current user error:', error)
     return null
   }
-
-  const { data: userData, error: userError } = await supabase.from("User").select("*").eq("email", user.email).single()
-
-  if (userError || !userData) {
-    return null
-  }
-
-  return userData
 }
 
-export async function requireAuth() {
+export async function requireAuth(): Promise<User> {
   const user = await getCurrentUser()
   if (!user) {
     throw new Error("Authentication required")
@@ -30,7 +39,7 @@ export async function requireAuth() {
   return user
 }
 
-export async function requireRole(allowedRoles: string[]) {
+export async function requireRole(allowedRoles: string[]): Promise<User> {
   const user = await requireAuth()
   if (!allowedRoles.includes(user.role)) {
     throw new Error("Insufficient permissions")
