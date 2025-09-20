@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Vote, User, Loader2, CheckCircle } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { createClient } from "@/lib/supabase/client"
+import Link from "next/link"
 
 const PRODI_OPTIONS = [
   "Teknik Informatika",
@@ -36,6 +36,8 @@ const PRODI_OPTIONS = [
 
 export default function RegisterPage() {
   const [formData, setFormData] = useState({
+    email: "",
+    password: "",
     nim: "",
     name: "",
     prodi: "",
@@ -44,36 +46,7 @@ export default function RegisterPage() {
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
-  const [userEmail, setUserEmail] = useState("")
   const router = useRouter()
-  const supabase = createClient()
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) {
-        router.push("/login")
-        return
-      }
-      setUserEmail(user.email || "")
-
-      // Check if user already registered
-      const { data: userData } = await supabase.from("User").select("*").eq("email", user.email).single()
-
-      if (userData) {
-        // User already registered, redirect based on status
-        if (userData.hasVoted) {
-          router.push("/success")
-        } else {
-          router.push("/generate-code")
-        }
-      }
-    }
-
-    checkAuth()
-  }, [router, supabase])
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({
@@ -113,33 +86,32 @@ export default function RegisterPage() {
     }
 
     try {
-      // Check if NIM already exists
-      const { data: existingUser } = await supabase.from("User").select("nim").eq("nim", formData.nim).single()
-
-      if (existingUser) {
-        setError("NIM sudah terdaftar dalam sistem")
-        setLoading(false)
-        return
-      }
-
-      // Insert new user
-      const { error: insertError } = await supabase.from("User").insert({
-        email: userEmail,
-        nim: formData.nim,
-        name: formData.name,
-        prodi: formData.prodi,
-        gender: formData.gender,
-        phone: formData.phone || null,
-        role: "VOTER",
+      // Call register API
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: formData.email,
+          password: formData.password,
+          nim: formData.nim,
+          name: formData.name,
+          prodi: formData.prodi,
+          gender: formData.gender,
+          phone: formData.phone || null,
+        }),
       })
 
-      if (insertError) {
-        setError("Gagal menyimpan data: " + insertError.message)
+      const result = await response.json()
+
+      if (!response.ok) {
+        setError(result.error || "Terjadi kesalahan saat registrasi")
         return
       }
 
-      // Registration successful, redirect to generate code
-      router.push("/generate-code")
+      // Registration successful, redirect to login
+      router.push("/login")
     } catch (err) {
       setError("Terjadi kesalahan saat registrasi")
     } finally {
@@ -152,6 +124,9 @@ export default function RegisterPage() {
       <div className="w-full max-w-2xl">
         {/* Header */}
         <div className="text-center mb-8">
+          <Link href="/" className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6">
+            ← Kembali ke Beranda
+          </Link>
           <div className="flex items-center justify-center gap-3 mb-4">
             <div className="h-12 w-12 rounded-lg bg-primary flex items-center justify-center">
               <Vote className="h-7 w-7 text-primary-foreground" />
@@ -168,10 +143,10 @@ export default function RegisterPage() {
           <CardHeader className="text-center">
             <CardTitle className="text-2xl flex items-center justify-center gap-2">
               <User className="h-6 w-6" />
-              Lengkapi Data Diri
+              Daftar Akun Baru
             </CardTitle>
             <CardDescription>
-              Silakan lengkapi data diri Anda untuk dapat berpartisipasi dalam pemilihan
+              Isi data lengkap untuk membuat akun dan berpartisipasi dalam pemilihan
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -182,11 +157,32 @@ export default function RegisterPage() {
                 </Alert>
               )}
 
-              {/* Email (Read-only) */}
+              {/* Email */}
               <div className="space-y-2">
-                <Label htmlFor="email">Email Mahasiswa</Label>
-                <Input id="email" type="email" value={userEmail} disabled className="bg-muted" />
-                <p className="text-xs text-muted-foreground">Email ini sudah terverifikasi dari sistem login</p>
+                <Label htmlFor="email">Email *</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="email@example.com"
+                  value={formData.email}
+                  onChange={(e) => handleInputChange("email", e.target.value)}
+                  required
+                  disabled={loading}
+                />
+              </div>
+
+              {/* Password */}
+              <div className="space-y-2">
+                <Label htmlFor="password">Password *</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="Password"
+                  value={formData.password}
+                  onChange={(e) => handleInputChange("password", e.target.value)}
+                  required
+                  disabled={loading}
+                />
               </div>
 
               {/* NIM */}
@@ -276,16 +272,25 @@ export default function RegisterPage() {
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Menyimpan Data...
+                    Mendaftar...
                   </>
                 ) : (
                   <>
                     <CheckCircle className="mr-2 h-4 w-4" />
-                    Daftar Sebagai Pemilih
+                    Daftar Akun
                   </>
                 )}
               </Button>
             </form>
+
+            <div className="mt-6 text-center">
+              <p className="text-sm text-muted-foreground">
+                Sudah punya akun?{" "}
+                <Link href="/login" className="text-primary hover:underline">
+                  Login di sini
+                </Link>
+              </p>
+            </div>
           </CardContent>
         </Card>
 
@@ -297,7 +302,7 @@ export default function RegisterPage() {
               <div className="text-sm text-muted-foreground space-y-2">
                 <p>• Pastikan data yang Anda masukkan sesuai dengan KTM</p>
                 <p>• NIM yang sudah terdaftar tidak dapat digunakan lagi</p>
-                <p>• Setelah registrasi, Anda akan mendapatkan kode QR untuk voting</p>
+                <p>• Setelah registrasi berhasil, silakan login untuk melanjutkan</p>
                 <p>• Hubungi panitia jika mengalami kesulitan: pemilu@itera.ac.id</p>
               </div>
             </div>
