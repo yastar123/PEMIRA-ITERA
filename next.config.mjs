@@ -27,9 +27,9 @@ const nextConfig = {
       },
     ];
   },
-  // Enable hostname binding for all hosts to work with Replit proxy
-  experimental: {
-    allowedHosts: true,
+  // Configure for Replit environment
+  env: {
+    HOSTNAME: '0.0.0.0',
   },
 }
 

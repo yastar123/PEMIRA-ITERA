@@ -1,36 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { getSession } from '@/lib/session'
+import { requireAdmin } from '@/lib/session'
 
 export async function POST(request: NextRequest) {
   try {
-    const authToken = request.cookies.get('auth-token')?.value
-
-    if (!authToken) {
-      return NextResponse.json(
-        { error: 'Not authenticated' },
-        { status: 401 }
-      )
-    }
-
-    const adminId = getSession(authToken)
-    if (!adminId) {
-      return NextResponse.json(
-        { error: 'Invalid session' },
-        { status: 401 }
-      )
-    }
-
-    const admin = await prisma.user.findUnique({
-      where: { id: adminId }
-    })
-
-    if (!admin || (admin.role !== 'ADMIN' && admin.role !== 'SUPER_ADMIN')) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 403 }
-      )
-    }
+    const admin = await requireAdmin(request)
 
     const { qrCode, redeemCode } = await request.json()
 
