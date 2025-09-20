@@ -21,7 +21,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Plus, Edit, Trash2, Eye, EyeOff, AlertCircle, CheckCircle } from "lucide-react"
-import { createClient } from "@/lib/supabase/client"
+import { ApiClient } from "@/lib/api-client"
 import type { Candidate } from "@/lib/types"
 
 export default function CandidateManagement() {
@@ -40,7 +40,6 @@ export default function CandidateManagement() {
     misi: "",
     photo: "",
   })
-  const supabase = createClient()
 
   useEffect(() => {
     loadCandidates()
@@ -48,14 +47,8 @@ export default function CandidateManagement() {
 
   const loadCandidates = async () => {
     try {
-      const { data, error } = await supabase.from("Candidate").select("*").order("name")
-
-      if (error) {
-        setError("Gagal memuat data kandidat")
-        return
-      }
-
-      setCandidates(data || [])
+      const data = await ApiClient.getCandidates()
+      setCandidates(data.candidates || [])
     } catch (err) {
       setError("Terjadi kesalahan saat memuat data")
     } finally {
@@ -72,23 +65,11 @@ export default function CandidateManagement() {
     try {
       if (editingCandidate) {
         // Update existing candidate
-        const { error } = await supabase.from("Candidate").update(formData).eq("id", editingCandidate.id)
-
-        if (error) {
-          setError("Gagal mengupdate kandidat: " + error.message)
-          return
-        }
-
+        await ApiClient.updateCandidate(editingCandidate.id, formData)
         setSuccess("Kandidat berhasil diupdate")
       } else {
         // Create new candidate
-        const { error } = await supabase.from("Candidate").insert(formData)
-
-        if (error) {
-          setError("Gagal menambah kandidat: " + error.message)
-          return
-        }
-
+        await ApiClient.createCandidate(formData)
         setSuccess("Kandidat berhasil ditambahkan")
       }
 
@@ -97,7 +78,7 @@ export default function CandidateManagement() {
       setFormData({ name: "", nim: "", prodi: "", visi: "", misi: "", photo: "" })
       await loadCandidates()
     } catch (err) {
-      setError("Terjadi kesalahan saat menyimpan data")
+      setError(err instanceof Error ? err.message : "Terjadi kesalahan saat menyimpan data")
     } finally {
       setSaving(false)
     }
@@ -120,33 +101,21 @@ export default function CandidateManagement() {
     if (!confirm("Apakah Anda yakin ingin menghapus kandidat ini?")) return
 
     try {
-      const { error } = await supabase.from("Candidate").delete().eq("id", candidateId)
-
-      if (error) {
-        setError("Gagal menghapus kandidat: " + error.message)
-        return
-      }
-
+      await ApiClient.deleteCandidate(candidateId)
       setSuccess("Kandidat berhasil dihapus")
       await loadCandidates()
     } catch (err) {
-      setError("Terjadi kesalahan saat menghapus kandidat")
+      setError(err instanceof Error ? err.message : "Terjadi kesalahan saat menghapus kandidat")
     }
   }
 
   const toggleActive = async (candidateId: string, currentStatus: boolean) => {
     try {
-      const { error } = await supabase.from("Candidate").update({ isActive: !currentStatus }).eq("id", candidateId)
-
-      if (error) {
-        setError("Gagal mengubah status kandidat: " + error.message)
-        return
-      }
-
+      await ApiClient.updateCandidate(candidateId, { isActive: !currentStatus })
       setSuccess(`Kandidat berhasil ${!currentStatus ? "diaktifkan" : "dinonaktifkan"}`)
       await loadCandidates()
     } catch (err) {
-      setError("Terjadi kesalahan saat mengubah status")
+      setError(err instanceof Error ? err.message : "Terjadi kesalahan saat mengubah status")
     }
   }
 

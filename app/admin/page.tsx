@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { QrCode, Scan, CheckCircle, Clock, AlertCircle, LogOut, RefreshCw, Search, Camera } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { ApiClient } from "@/lib/api-client"
 import QRScanner from "@/components/qr-scanner"
 
 interface VotingSession {
@@ -43,34 +44,26 @@ export default function AdminPage() {
   const [recentValidations, setRecentValidations] = useState<VotingSession[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const router = useRouter()
-  const supabase = createClient()
 
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser()
+        const { user } = await ApiClient.getUser()
         if (!user) {
           router.push("/login")
           return
         }
 
-        const { data: adminData, error: adminError } = await supabase
-          .from("User")
-          .select("*")
-          .eq("email", user.email)
-          .single()
-
-        if (adminError || !adminData || (adminData.role !== "ADMIN" && adminData.role !== "SUPER_ADMIN")) {
+        if (user.role !== "ADMIN" && user.role !== "SUPER_ADMIN") {
           router.push("/")
           return
         }
 
-        setAdmin(adminData)
+        setAdmin(user)
         await loadData()
       } catch (err) {
         setError("Terjadi kesalahan saat memuat data")
+        router.push("/login")
       } finally {
         setLoading(false)
       }
@@ -78,59 +71,31 @@ export default function AdminPage() {
 
     checkAuth()
 
-    // Set up real-time subscription
-    const channel = supabase
-      .channel("admin-voting-sessions")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "VotingSession",
-        },
-        () => {
-          loadData()
-        },
-      )
-      .subscribe()
+    // Set up polling for data updates (replacing real-time subscription)
+    const interval = setInterval(() => {
+      loadData()
+    }, 10000) // Refresh every 10 seconds
 
     return () => {
-      supabase.removeChannel(channel)
+      clearInterval(interval)
     }
-  }, [router, supabase])
+  }, [router])
 
   const loadData = async () => {
     try {
-      // Load pending sessions
-      const { data: pendingData } = await supabase
-        .from("VotingSession")
-        .select(
-          `
-          *,
-          user:User(name, nim, prodi, email)
-        `,
-        )
-        .eq("isValidated", false)
-        .eq("isUsed", false)
-        .gte("expiresAt", new Date().toISOString())
-        .order("createdAt", { ascending: false })
+      // We'll need to create these API endpoints
+      // For now, we'll use placeholder data or create the endpoints
+      const pendingResponse = await fetch('/api/admin/pending-sessions')
+      if (pendingResponse.ok) {
+        const pendingData = await pendingResponse.json()
+        setPendingSessions(pendingData.sessions || [])
+      }
 
-      setPendingSessions(pendingData || [])
-
-      // Load recent validations
-      const { data: recentData } = await supabase
-        .from("VotingSession")
-        .select(
-          `
-          *,
-          user:User(name, nim, prodi, email)
-        `,
-        )
-        .eq("isValidated", true)
-        .order("createdAt", { ascending: false })
-        .limit(10)
-
-      setRecentValidations(recentData || [])
+      const recentResponse = await fetch('/api/admin/recent-validations')
+      if (recentResponse.ok) {
+        const recentData = await recentResponse.json()
+        setRecentValidations(recentData.sessions || [])
+      }
     } catch (err) {
       console.error("Error loading data:", err)
     }
@@ -142,75 +107,12 @@ export default function AdminPage() {
     setSuccess("")
 
     try {
-      // Get session data
-      const { data: sessionData, error: sessionError } = await supabase
-        .from("VotingSession")
-        .select(
-          `
-          *,
-          user:User(*)
-        `,
-        )
-        .eq("id", sessionId)
-        .single()
-
-      if (sessionError || !sessionData) {
-        setError("Session tidak ditemukan")
-        return
-      }
-
-      // Check if already validated
-      if (sessionData.isValidated) {
-        setError("Session sudah divalidasi sebelumnya")
-        return
-      }
-
-      // Check if expired
-      const now = new Date()
-      const expiresAt = new Date(sessionData.expiresAt)
-      if (now > expiresAt) {
-        setError("Kode sudah expired")
-        return
-      }
-
-      // Validate redeem code if provided
-      if (redeemCode && sessionData.redeemCode !== redeemCode) {
-        setError("Kode redeem tidak valid")
-        return
-      }
-
-      // Update session as validated
-      const { error: updateError } = await supabase
-        .from("VotingSession")
-        .update({
-          isValidated: true,
-          validatedBy: admin.id,
-        })
-        .eq("id", sessionId)
-
-      if (updateError) {
-        setError("Gagal memvalidasi session: " + updateError.message)
-        return
-      }
-
-      // Log admin action
-      await supabase.from("AdminLog").insert({
-        adminId: admin.id,
-        action: "VALIDATE_SESSION",
-        target: sessionData.user?.id,
-        details: {
-          sessionId,
-          redeemCode: sessionData.redeemCode,
-          userNim: sessionData.user?.nim,
-          userName: sessionData.user?.name,
-        },
-      })
-
-      setSuccess(`Berhasil memvalidasi session untuk ${sessionData.user?.name} (${sessionData.user?.nim})`)
+      const result = await ApiClient.validateSession(sessionId, redeemCode)
+      setSuccess(result.message || "Session berhasil divalidasi")
       setManualCode("")
       await loadData()
     } catch (err) {
-      setError("Terjadi kesalahan saat validasi")
+      setError(err instanceof Error ? err.message : "Terjadi kesalahan saat validasi")
     } finally {
       setValidating(false)
     }
@@ -220,18 +122,15 @@ export default function AdminPage() {
     try {
       const qrData = JSON.parse(data)
       if (qrData.userId && qrData.redeemCode) {
-        // Find session by user ID and redeem code
-        const { data: sessionData } = await supabase
-          .from("VotingSession")
-          .select("id")
-          .eq("userId", qrData.userId)
-          .eq("redeemCode", qrData.redeemCode)
-          .eq("isValidated", false)
-          .eq("isUsed", false)
-          .single()
-
-        if (sessionData) {
-          await validateSession(sessionData.id, qrData.redeemCode)
+        // Find session by user ID and redeem code via API
+        const response = await fetch(`/api/admin/find-session?userId=${qrData.userId}&redeemCode=${qrData.redeemCode}`)
+        if (response.ok) {
+          const sessionData = await response.json()
+          if (sessionData.session) {
+            await validateSession(sessionData.session.id, qrData.redeemCode)
+          } else {
+            setError("Session tidak ditemukan atau sudah divalidasi")
+          }
         } else {
           setError("Session tidak ditemukan atau sudah divalidasi")
         }
@@ -251,16 +150,14 @@ export default function AdminPage() {
     }
 
     try {
-      const { data: sessionData } = await supabase
-        .from("VotingSession")
-        .select("id")
-        .eq("redeemCode", manualCode.trim().toUpperCase())
-        .eq("isValidated", false)
-        .eq("isUsed", false)
-        .single()
-
-      if (sessionData) {
-        await validateSession(sessionData.id, manualCode.trim().toUpperCase())
+      const response = await fetch(`/api/admin/find-session?redeemCode=${manualCode.trim().toUpperCase()}`)
+      if (response.ok) {
+        const sessionData = await response.json()
+        if (sessionData.session) {
+          await validateSession(sessionData.session.id, manualCode.trim().toUpperCase())
+        } else {
+          setError("Kode redeem tidak ditemukan atau sudah divalidasi")
+        }
       } else {
         setError("Kode redeem tidak ditemukan atau sudah divalidasi")
       }
@@ -270,8 +167,13 @@ export default function AdminPage() {
   }
 
   const handleLogout = async () => {
-    await supabase.auth.signOut()
-    router.push("/")
+    try {
+      await ApiClient.logout()
+      router.push("/")
+    } catch (err) {
+      console.error("Logout error:", err)
+      router.push("/")
+    }
   }
 
   const filteredPendingSessions = pendingSessions.filter(

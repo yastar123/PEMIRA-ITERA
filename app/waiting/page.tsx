@@ -6,7 +6,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Clock, CheckCircle, Loader2, RefreshCw } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { createClient } from "@/lib/supabase/client"
+import { ApiClient } from "@/lib/api-client"
 import { Button } from "@/components/ui/button"
 
 export default function WaitingPage() {
@@ -15,56 +15,46 @@ export default function WaitingPage() {
   const [loading, setLoading] = useState(true)
   const [timeRemaining, setTimeRemaining] = useState("")
   const router = useRouter()
-  const supabase = createClient()
 
   useEffect(() => {
     const checkAuthAndData = async () => {
       try {
-        const {
-          data: { user: authUser },
-        } = await supabase.auth.getUser()
+        const { user: authUser } = await ApiClient.getUser()
         if (!authUser) {
           router.push("/login")
           return
         }
 
-        const { data: userData } = await supabase.from("User").select("*").eq("email", authUser.email).single()
-
-        if (!userData) {
-          router.push("/register")
-          return
-        }
-
-        if (userData.hasVoted) {
+        if (authUser.hasVoted) {
           router.push("/success")
           return
         }
 
-        setUser(userData)
+        setUser(authUser)
 
-        // Get current voting session
-        const { data: sessionData } = await supabase
-          .from("VotingSession")
-          .select("*")
-          .eq("userId", userData.id)
-          .eq("isUsed", false)
-          .order("createdAt", { ascending: false })
-          .limit(1)
-          .single()
+        // Get current voting session - we'll need to create this API endpoint
+        try {
+          const sessionData = await ApiClient.getVotingSession(authUser.id)
+          
+          if (!sessionData) {
+            router.push("/generate-code")
+            return
+          }
 
-        if (!sessionData) {
+          if (sessionData.isValidated) {
+            router.push("/vote")
+            return
+          }
+
+          setVotingSession(sessionData)
+        } catch (err) {
+          // No session found, redirect to generate code
           router.push("/generate-code")
           return
         }
-
-        if (sessionData.isValidated) {
-          router.push("/vote")
-          return
-        }
-
-        setVotingSession(sessionData)
       } catch (err) {
         console.error("Error loading data:", err)
+        router.push("/login")
       } finally {
         setLoading(false)
       }
@@ -72,28 +62,24 @@ export default function WaitingPage() {
 
     checkAuthAndData()
 
-    // Set up real-time subscription
-    const channel = supabase
-      .channel("waiting-validation")
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "VotingSession",
-        },
-        (payload) => {
-          if (payload.new.userId === user?.id && payload.new.isValidated) {
+    // Set up polling for session validation (replacing real-time subscription)
+    const interval = setInterval(async () => {
+      if (user?.id) {
+        try {
+          const sessionData = await ApiClient.getVotingSession(user.id)
+          if (sessionData?.isValidated) {
             router.push("/vote")
           }
-        },
-      )
-      .subscribe()
+        } catch (err) {
+          console.error("Error checking session:", err)
+        }
+      }
+    }, 3000) // Check every 3 seconds
 
     return () => {
-      supabase.removeChannel(channel)
+      clearInterval(interval)
     }
-  }, [router, supabase, user?.id])
+  }, [router, user?.id])
 
   useEffect(() => {
     if (!votingSession) return

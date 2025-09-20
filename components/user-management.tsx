@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Search, RefreshCw, UserCheck, UserX } from "lucide-react"
-import { createClient } from "@/lib/supabase/client"
+import { ApiClient } from "@/lib/api-client"
 import type { User } from "@/lib/types"
 
 export default function UserManagement() {
@@ -18,7 +18,6 @@ export default function UserManagement() {
   const [searchTerm, setSearchTerm] = useState("")
   const [roleFilter, setRoleFilter] = useState("all")
   const [statusFilter, setStatusFilter] = useState("all")
-  const supabase = createClient()
 
   useEffect(() => {
     loadUsers()
@@ -30,14 +29,13 @@ export default function UserManagement() {
 
   const loadUsers = async () => {
     try {
-      const { data, error } = await supabase.from("User").select("*").order("createdAt", { ascending: false })
-
-      if (error) {
-        console.error("Error loading users:", error)
-        return
+      const response = await fetch('/api/admin/users')
+      if (response.ok) {
+        const data = await response.json()
+        setUsers(data.users || [])
+      } else {
+        console.error("Error loading users")
       }
-
-      setUsers(data || [])
     } catch (err) {
       console.error("Error:", err)
     } finally {
@@ -78,14 +76,17 @@ export default function UserManagement() {
 
   const updateUserRole = async (userId: string, newRole: string) => {
     try {
-      const { error } = await supabase.from("User").update({ role: newRole }).eq("id", userId)
+      const response = await fetch(`/api/admin/users/${userId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: newRole })
+      })
 
-      if (error) {
-        console.error("Error updating user role:", error)
-        return
+      if (response.ok) {
+        await loadUsers()
+      } else {
+        console.error("Error updating user role")
       }
-
-      await loadUsers()
     } catch (err) {
       console.error("Error:", err)
     }

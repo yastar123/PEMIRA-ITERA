@@ -8,7 +8,6 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Settings, Save, AlertCircle, CheckCircle } from "lucide-react"
-import { createClient } from "@/lib/supabase/client"
 
 interface SystemSetting {
   key: string
@@ -22,7 +21,6 @@ export default function SystemSettings() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
-  const supabase = createClient()
 
   useEffect(() => {
     loadSettings()
@@ -30,14 +28,13 @@ export default function SystemSettings() {
 
   const loadSettings = async () => {
     try {
-      const { data, error } = await supabase.from("Settings").select("*").order("key")
-
-      if (error) {
+      const response = await fetch('/api/admin/settings')
+      if (response.ok) {
+        const data = await response.json()
+        setSettings(data.settings || [])
+      } else {
         setError("Gagal memuat pengaturan sistem")
-        return
       }
-
-      setSettings(data || [])
     } catch (err) {
       setError("Terjadi kesalahan saat memuat pengaturan")
     } finally {
@@ -47,15 +44,18 @@ export default function SystemSettings() {
 
   const updateSetting = async (key: string, value: string) => {
     try {
-      const { error } = await supabase.from("Settings").update({ value }).eq("key", key)
+      const response = await fetch('/api/admin/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, value })
+      })
 
-      if (error) {
-        setError("Gagal mengupdate pengaturan: " + error.message)
-        return
+      if (response.ok) {
+        // Update local state
+        setSettings((prev) => prev.map((setting) => (setting.key === key ? { ...setting, value } : setting)))
+      } else {
+        setError("Gagal mengupdate pengaturan")
       }
-
-      // Update local state
-      setSettings((prev) => prev.map((setting) => (setting.key === key ? { ...setting, value } : setting)))
     } catch (err) {
       setError("Terjadi kesalahan saat mengupdate pengaturan")
     }
@@ -67,17 +67,17 @@ export default function SystemSettings() {
     setSuccess("")
 
     try {
-      // Update all settings
-      for (const setting of settings) {
-        const { error } = await supabase.from("Settings").update({ value: setting.value }).eq("key", setting.key)
+      const response = await fetch('/api/admin/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings })
+      })
 
-        if (error) {
-          setError("Gagal menyimpan pengaturan: " + error.message)
-          return
-        }
+      if (response.ok) {
+        setSuccess("Semua pengaturan berhasil disimpan")
+      } else {
+        setError("Gagal menyimpan pengaturan")
       }
-
-      setSuccess("Semua pengaturan berhasil disimpan")
     } catch (err) {
       setError("Terjadi kesalahan saat menyimpan pengaturan")
     } finally {

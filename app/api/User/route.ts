@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { prisma } from '@/lib/prisma'
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,15 +14,20 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const supabase = await createClient()
+    const userData = await prisma.user.findUnique({
+      where: { email: email.toLowerCase() },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        nim: true,
+        role: true,
+        hasVoted: true,
+        prodi: true
+      }
+    })
 
-    const { data: userData, error: userError } = await supabase
-      .from('User')
-      .select('id, email, name, nim, role, hasVoted, prodi')
-      .eq('email', email.toLowerCase())
-      .single()
-
-    if (userError || !userData) {
+    if (!userData) {
       return NextResponse.json(
         { error: 'User not found' },
         { status: 404 }

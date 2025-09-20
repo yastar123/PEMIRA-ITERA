@@ -9,7 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
 import { Shield, Users, Vote, TrendingUp, Clock, AlertCircle, LogOut, RefreshCw, Download } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { createClient } from "@/lib/supabase/client"
+import { ApiClient } from "@/lib/api-client"
 import CandidateManagement from "@/components/candidate-management"
 import UserManagement from "@/components/user-management"
 import SystemSettings from "@/components/system-settings"
@@ -42,34 +42,26 @@ export default function SuperAdminPage() {
   const [voteStats, setVoteStats] = useState<VoteStats[]>([])
   const [error, setError] = useState("")
   const router = useRouter()
-  const supabase = createClient()
 
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser()
+        const { user } = await ApiClient.getUser()
         if (!user) {
           router.push("/login")
           return
         }
 
-        const { data: adminData, error: adminError } = await supabase
-          .from("User")
-          .select("*")
-          .eq("email", user.email)
-          .single()
-
-        if (adminError || !adminData || adminData.role !== "SUPER_ADMIN") {
+        if (user.role !== "SUPER_ADMIN") {
           router.push("/")
           return
         }
 
-        setAdmin(adminData)
+        setAdmin(user)
         await loadDashboardData()
       } catch (err) {
         setError("Terjadi kesalahan saat memuat data")
+        router.push("/login")
       } finally {
         setLoading(false)
       }
@@ -77,98 +69,24 @@ export default function SuperAdminPage() {
 
     checkAuth()
 
-    // Set up real-time subscription for vote updates
-    const channel = supabase
-      .channel("super-admin-updates")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "Vote",
-        },
-        () => {
-          loadDashboardData()
-        },
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "User",
-        },
-        () => {
-          loadDashboardData()
-        },
-      )
-      .subscribe()
+    // Set up polling for data updates (replacing real-time subscription)
+    const interval = setInterval(() => {
+      loadDashboardData()
+    }, 15000) // Refresh every 15 seconds
 
     return () => {
-      supabase.removeChannel(channel)
+      clearInterval(interval)
     }
-  }, [router, supabase])
+  }, [router])
 
   const loadDashboardData = async () => {
     try {
-      // Get total users (voters only)
-      const { count: totalUsers } = await supabase
-        .from("User")
-        .select("*", { count: "exact", head: true })
-        .eq("role", "VOTER")
-
-      // Get total votes
-      const { count: totalVotes } = await supabase.from("Vote").select("*", { count: "exact", head: true })
-
-      // Get total active candidates
-      const { count: totalCandidates } = await supabase
-        .from("Candidate")
-        .select("*", { count: "exact", head: true })
-        .eq("isActive", true)
-
-      // Get pending validations
-      const { count: pendingValidations } = await supabase
-        .from("VotingSession")
-        .select("*", { count: "exact", head: true })
-        .eq("isValidated", false)
-        .eq("isUsed", false)
-        .gte("expiresAt", new Date().toISOString())
-
-      // Calculate voting percentage
-      const votingPercentage = totalUsers ? Math.round((totalVotes! / totalUsers) * 100) : 0
-
-      setStats({
-        totalUsers: totalUsers || 0,
-        totalVotes: totalVotes || 0,
-        totalCandidates: totalCandidates || 0,
-        pendingValidations: pendingValidations || 0,
-        votingPercentage,
-      })
-
-      // Get vote statistics by candidate
-      const { data: voteData } = await supabase.from("Vote").select(`
-        candidateId,
-        candidate:Candidate(name)
-      `)
-
-      if (voteData) {
-        const voteCounts = voteData.reduce((acc: any, vote: any) => {
-          const candidateId = vote.candidateId
-          const candidateName = vote.candidate?.name || "Unknown"
-          acc[candidateId] = {
-            candidateId,
-            candidateName,
-            voteCount: (acc[candidateId]?.voteCount || 0) + 1,
-          }
-          return acc
-        }, {})
-
-        const voteStatsArray = Object.values(voteCounts).map((item: any) => ({
-          ...item,
-          percentage: totalVotes ? Math.round((item.voteCount / totalVotes) * 100) : 0,
-        }))
-
-        setVoteStats(voteStatsArray as VoteStats[])
+      // We'll use the stats API endpoint
+      const response = await fetch('/api/admin/stats')
+      if (response.ok) {
+        const data = await response.json()
+        setStats(data.stats)
+        setVoteStats(data.voteStats || [])
       }
     } catch (err) {
       console.error("Error loading dashboard data:", err)
@@ -176,46 +94,28 @@ export default function SuperAdminPage() {
   }
 
   const handleLogout = async () => {
-    await supabase.auth.signOut()
-    router.push("/")
+    try {
+      await ApiClient.logout()
+      router.push("/")
+    } catch (err) {
+      console.error("Logout error:", err)
+      router.push("/")
+    }
   }
 
   const exportData = async (type: "users" | "votes" | "all") => {
     try {
-      let data: any[] = []
-      let filename = ""
-
-      switch (type) {
-        case "users":
-          const { data: userData } = await supabase.from("User").select("*").eq("role", "VOTER")
-          data = userData || []
-          filename = "users_export.csv"
-          break
-        case "votes":
-          const { data: voteData } = await supabase.from("Vote").select(`
-            *,
-            user:User(name, nim, prodi),
-            candidate:Candidate(name, nim)
-          `)
-          data = voteData || []
-          filename = "votes_export.csv"
-          break
-        case "all":
-          // Export comprehensive data
-          const { data: allData } = await supabase.from("Vote").select(`
-            createdAt,
-            user:User(name, nim, prodi, email),
-            candidate:Candidate(name, nim, prodi)
-          `)
-          data = allData || []
-          filename = "election_results.csv"
-          break
-      }
-
-      // Convert to CSV (simplified)
-      if (data.length > 0) {
-        const csv = convertToCSV(data)
-        downloadCSV(csv, filename)
+      const response = await fetch(`/api/admin/export?type=${type}`)
+      if (response.ok) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${type}_export_${new Date().toISOString().split('T')[0]}.csv`
+        a.click()
+        window.URL.revokeObjectURL(url)
+      } else {
+        setError("Gagal mengekspor data")
       }
     } catch (err) {
       setError("Gagal mengekspor data")
