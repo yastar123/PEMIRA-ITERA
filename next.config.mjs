@@ -27,7 +27,11 @@ const nextConfig = {
       },
     ];
   },
-  // Configure for Replit environment
+  // Configure for Replit environment - allow all hosts
+  experimental: {
+    allowedHosts: true,
+  },
+  // Configure hostname
   env: {
     HOSTNAME: '0.0.0.0',
   },
