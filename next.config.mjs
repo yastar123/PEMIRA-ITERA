@@ -9,7 +9,7 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  // Replit proxy compatibility is handled by environment and hostname binding
+  // Replit proxy compatibility - allow all hosts for iframe embedding
   async headers() {
     return [
       {
@@ -26,6 +26,10 @@ const nextConfig = {
         ],
       },
     ];
+  },
+  // Enable hostname binding for all hosts to work with Replit proxy
+  experimental: {
+    allowedHosts: true,
   },
 }
 
