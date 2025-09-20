@@ -140,6 +140,12 @@ export default function LoginPage() {
               </Button>
             </form>
 
+            <div className="mt-4 text-center">
+              <Link href="/forgot-password" className="text-sm text-blue-600 hover:underline">
+                Lupa Password?
+              </Link>
+            </div>
+
             <div className="mt-6 text-center">
               <p className="text-sm text-muted-foreground">
                 Belum punya akun?{" "}

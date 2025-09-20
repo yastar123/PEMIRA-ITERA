@@ -46,6 +46,20 @@ export class ApiClient {
     return this.request('/auth/me')
   }
 
+  static async forgotPassword(email: string) {
+    return this.request('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    })
+  }
+
+  static async verifyOtpAndResetPassword(email: string, otp: string, newPassword: string) {
+    return this.request('/auth/verify-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email, otp, newPassword }),
+    })
+  }
+
   // User methods
   static async getUserByEmail(email: string) {
     return this.request(`/User?email=${encodeURIComponent(email)}`)
