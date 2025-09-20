@@ -12,65 +12,6 @@ import { Vote, ArrowLeft, Loader2 } from "@/lib/icons"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 
-// Mock user data from seeder for testing
-const MOCK_USERS = [
-  {
-    email: "superadmin@itera.ac.id",
-    password: "superadmin123",
-    role: "SUPER_ADMIN",
-    name: "Super Administrator",
-    hasVoted: false,
-  },
-  {
-    email: "admin1@itera.ac.id",
-    password: "admin123",
-    role: "ADMIN",
-    name: "Admin Panitia 1",
-    hasVoted: false,
-  },
-  {
-    email: "admin2@itera.ac.id",
-    password: "admin123",
-    role: "ADMIN",
-    name: "Admin Panitia 2",
-    hasVoted: false,
-  },
-  {
-    email: "mahasiswa1@student.itera.ac.id",
-    password: "mahasiswa123",
-    role: "VOTER",
-    name: "Budi Santoso",
-    hasVoted: false,
-  },
-  {
-    email: "mahasiswa2@student.itera.ac.id",
-    password: "mahasiswa123",
-    role: "VOTER",
-    name: "Siti Nurhaliza",
-    hasVoted: false,
-  },
-  {
-    email: "mahasiswa3@student.itera.ac.id",
-    password: "mahasiswa123",
-    role: "VOTER",
-    name: "Andi Wijaya",
-    hasVoted: false,
-  },
-  {
-    email: "mahasiswa4@student.itera.ac.id",
-    password: "mahasiswa123",
-    role: "VOTER",
-    name: "Maya Sari",
-    hasVoted: false,
-  },
-  {
-    email: "mahasiswa5@student.itera.ac.id",
-    password: "mahasiswa123",
-    role: "VOTER",
-    name: "Reza Pratama",
-    hasVoted: false,
-  },
-]
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -85,21 +26,24 @@ export default function LoginPage() {
     setError("")
 
     try {
-      // Simulate API delay
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      // Call the login API
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      })
 
-      // Find user in mock data
-      const user = MOCK_USERS.find((u) => u.email === email && u.password === password)
+      const result = await response.json()
 
-      if (!user) {
-        setError("Email atau password salah")
+      if (!response.ok) {
+        setError(result.error || "Email atau password salah")
         return
       }
 
-      // Store user session in localStorage for mock auth
-      localStorage.setItem("mockUser", JSON.stringify(user))
-
       // Redirect based on role
+      const user = result.user
       switch (user.role) {
         case "SUPER_ADMIN":
           router.push("/super-admin")
@@ -144,8 +88,8 @@ export default function LoginPage() {
         {/* Login Form */}
         <Card>
           <CardHeader className="text-center">
-            <CardTitle className="text-2xl">Masuk ke Akun Anda</CardTitle>
-            <CardDescription>Gunakan email dan password mahasiswa ITERA untuk masuk</CardDescription>
+            <CardTitle className="text-2xl">Login</CardTitle>
+            <CardDescription>Masukkan email dan password Anda</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleLogin} className="space-y-4">
@@ -156,11 +100,11 @@ export default function LoginPage() {
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="email">Email Mahasiswa</Label>
+                <Label htmlFor="email">Email</Label>
                 <Input
                   id="email"
                   type="email"
-                  placeholder="nama@student.itera.ac.id"
+                  placeholder="email@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
@@ -173,7 +117,7 @@ export default function LoginPage() {
                 <Input
                   id="password"
                   type="password"
-                  placeholder="Masukkan password Anda"
+                  placeholder="Password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
@@ -207,57 +151,6 @@ export default function LoginPage() {
           </CardContent>
         </Card>
 
-        {/* Test Accounts Info */}
-        <Card className="mt-6 bg-muted/50">
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <h3 className="font-semibold mb-2">Akun Testing</h3>
-              <div className="text-sm space-y-2">
-                <div className="p-2 bg-background rounded">
-                  <p>
-                    <strong>Super Admin:</strong>
-                  </p>
-                  <p>Email: superadmin@itera.ac.id</p>
-                  <p>Password: superadmin123</p>
-                </div>
-                <div className="p-2 bg-background rounded">
-                  <p>
-                    <strong>Admin:</strong>
-                  </p>
-                  <p>Email: admin1@itera.ac.id</p>
-                  <p>Password: admin123</p>
-                </div>
-                <div className="p-2 bg-background rounded">
-                  <p>
-                    <strong>Mahasiswa:</strong>
-                  </p>
-                  <p>Email: mahasiswa1@student.itera.ac.id</p>
-                  <p>Password: mahasiswa123</p>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Info Card */}
-        <Card className="mt-6 bg-muted/50">
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <h3 className="font-semibold mb-2">Butuh Bantuan?</h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                Jika Anda mengalami kesulitan saat login, silakan hubungi panitia pemilihan.
-              </p>
-              <div className="text-sm">
-                <p>
-                  <strong>Email:</strong> pemilu@itera.ac.id
-                </p>
-                <p>
-                  <strong>WhatsApp:</strong> +62 812-3456-7890
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </div>
   )
