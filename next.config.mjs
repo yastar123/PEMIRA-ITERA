@@ -27,9 +27,9 @@ const nextConfig = {
       },
     ];
   },
-  // Configure for Replit environment - allow all hosts
+  // Configure for Replit environment - allow all dev origins
   experimental: {
-    allowedHosts: true,
+    allowedDevOrigins: true,
   },
   // Configure hostname
   env: {
