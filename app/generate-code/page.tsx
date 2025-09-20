@@ -8,7 +8,6 @@ import { Badge } from "@/components/ui/badge"
 import { QrCode, RefreshCw, Clock, User, Loader2, CheckCircle, AlertCircle } from "@/lib/icons"
 import { useRouter } from "next/navigation"
 import QRCodeDisplay from "@/components/qr-code-display"
-import { getMockUser, mockDatabase } from "@/lib/mock-auth"
 
 export default function GenerateCodePage() {
   const [user, setUser] = useState<any>(null)

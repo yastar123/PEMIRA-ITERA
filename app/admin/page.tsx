@@ -11,7 +11,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { QrCode, Scan, CheckCircle, Clock, AlertCircle, LogOut, RefreshCw, Search, Camera } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { createClient } from "@/lib/supabase/client"
 import QRScanner from "@/components/qr-scanner"
 
 interface VotingSession {
