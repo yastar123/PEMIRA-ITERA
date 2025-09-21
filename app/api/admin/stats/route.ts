@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
       prisma.votingSession.count({
         where: {
           isValidated: true,
-          updatedAt: {
+          createdAt: {
             gte: today,
             lt: tomorrow
           }
