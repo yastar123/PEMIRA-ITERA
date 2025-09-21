@@ -1,34 +1,18 @@
+// app/api/vote/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { getSession } from '@/lib/session'
+import { getUserFromRequest } from '@/lib/session'
 
 export async function POST(request: NextRequest) {
   try {
-    const authToken = request.cookies.get('auth-token')?.value
+    console.log('POST /api/vote called')
 
-    if (!authToken) {
+    const user = await getUserFromRequest(request)
+    
+    if (!user) {
       return NextResponse.json(
         { error: 'Not authenticated' },
         { status: 401 }
-      )
-    }
-
-    const userId = getSession(authToken)
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'Invalid session' },
-        { status: 401 }
-      )
-    }
-
-    const user = await prisma.user.findUnique({
-      where: { id: userId }
-    })
-
-    if (!user) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
       )
     }
 
@@ -48,7 +32,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Verify candidate exists
+    console.log('Voting for candidate:', candidateId)
+
+    // Verify candidate exists and is active
     const candidate = await prisma.candidate.findUnique({
       where: { id: candidateId }
     })
@@ -77,6 +63,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    console.log('Valid voting session found:', votingSession.id)
+
     // Create vote in a transaction
     const result = await prisma.$transaction(async (tx) => {
       // Create the vote (unique constraint prevents double voting)
@@ -102,12 +90,27 @@ export async function POST(request: NextRequest) {
       return vote
     })
 
+    console.log('Vote recorded successfully:', result.id)
+
     return NextResponse.json({ 
       success: true,
-      message: 'Vote recorded successfully' 
+      message: 'Vote recorded successfully',
+      vote: {
+        id: result.id,
+        candidateId: result.candidateId
+      }
     })
   } catch (error) {
     console.error('Vote error:', error)
+    
+    // Handle unique constraint violation (double voting attempt)
+    if (error instanceof Error && error.message.includes('Unique constraint')) {
+      return NextResponse.json(
+        { error: 'You have already voted' },
+        { status: 400 }
+      )
+    }
+    
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

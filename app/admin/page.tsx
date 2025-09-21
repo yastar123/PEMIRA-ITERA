@@ -9,7 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { QrCode, Scan, CheckCircle, Clock, AlertCircle, LogOut, RefreshCw, Search, Camera } from "lucide-react"
+import { QrCode, Scan, CheckCircle, Clock, AlertCircle, LogOut, RefreshCw, Search, Camera, Users, UserCheck, TrendingUp, Activity } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { ApiClient } from "@/lib/api-client"
 import QRScanner from "@/components/qr-scanner"
@@ -24,12 +24,25 @@ interface VotingSession {
   validatedBy?: string
   expiresAt: string
   createdAt: string
+  updatedAt: string
   user?: {
     name: string
     nim: string
     prodi: string
     email: string
   }
+  validator?: {
+    name: string
+    role: string
+  }
+}
+
+interface AdminStats {
+  totalUsers: number
+  totalPending: number
+  totalValidated: number
+  totalVoted: number
+  todayValidations: number
 }
 
 export default function AdminPage() {
@@ -43,6 +56,14 @@ export default function AdminPage() {
   const [pendingSessions, setPendingSessions] = useState<VotingSession[]>([])
   const [recentValidations, setRecentValidations] = useState<VotingSession[]>([])
   const [searchTerm, setSearchTerm] = useState("")
+  const [stats, setStats] = useState<AdminStats>({
+    totalUsers: 0,
+    totalPending: 0,
+    totalValidated: 0,
+    totalVoted: 0,
+    todayValidations: 0
+  })
+  const [activeTab, setActiveTab] = useState("scan")
   const router = useRouter()
 
   useEffect(() => {
@@ -62,6 +83,7 @@ export default function AdminPage() {
         setAdmin(user)
         await loadData()
       } catch (err) {
+        console.error("Auth check error:", err)
         setError("Terjadi kesalahan saat memuat data")
         router.push("/login")
       } finally {
@@ -71,99 +93,149 @@ export default function AdminPage() {
 
     checkAuth()
 
-    // Set up polling for data updates (replacing real-time subscription)
+    // Set up polling for data updates
     const interval = setInterval(() => {
-      loadData()
-    }, 10000) // Refresh every 10 seconds
+      if (!loading) {
+        loadData()
+      }
+    }, 15000) // Refresh every 15 seconds
 
     return () => {
       clearInterval(interval)
     }
-  }, [router])
+  }, [router, loading])
 
   const loadData = async () => {
     try {
-      // We'll need to create these API endpoints
-      // For now, we'll use placeholder data or create the endpoints
-      const pendingResponse = await fetch('/api/admin/pending-sessions')
-      if (pendingResponse.ok) {
-        const pendingData = await pendingResponse.json()
-        setPendingSessions(pendingData.sessions || [])
+      const [pendingResponse, recentResponse, statsResponse] = await Promise.allSettled([
+        ApiClient.getPendingSessions(),
+        ApiClient.getRecentValidations(),
+        ApiClient.getAdminStats()
+      ])
+
+      if (pendingResponse.status === 'fulfilled') {
+        setPendingSessions(pendingResponse.value.sessions || [])
+      } else {
+        console.error("Failed to load pending sessions:", pendingResponse.reason)
       }
 
-      const recentResponse = await fetch('/api/admin/recent-validations')
-      if (recentResponse.ok) {
-        const recentData = await recentResponse.json()
-        setRecentValidations(recentData.sessions || [])
+      if (recentResponse.status === 'fulfilled') {
+        setRecentValidations(recentResponse.value.sessions || [])
+      } else {
+        console.error("Failed to load recent validations:", recentResponse.reason)
+      }
+
+      if (statsResponse.status === 'fulfilled') {
+        setStats(statsResponse.value.stats || stats)
+      } else {
+        console.error("Failed to load stats:", statsResponse.reason)
       }
     } catch (err) {
       console.error("Error loading data:", err)
     }
   }
 
-  const validateSession = async (sessionId: string, redeemCode?: string) => {
+  const validateSession = async (sessionId?: string, redeemCode?: string, qrCode?: string) => {
     setValidating(true)
     setError("")
     setSuccess("")
 
     try {
-      const result = await ApiClient.validateSession(sessionId, redeemCode)
+      // Use existing ApiClient method with sessionId and redeemCode
+      const result = await ApiClient.validateSession(sessionId || '', redeemCode)
       setSuccess(result.message || "Session berhasil divalidasi")
       setManualCode("")
       await loadData()
+
+      // Auto-clear success message after 5 seconds
+      setTimeout(() => setSuccess(""), 5000)
+
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Terjadi kesalahan saat validasi")
+      const errorMessage = err instanceof Error ? err.message : "Terjadi kesalahan saat validasi"
+      setError(errorMessage)
+      console.error("Validation error:", err)
     } finally {
       setValidating(false)
     }
   }
 
   const handleQRScan = async (data: string) => {
+    console.log("QR Data received:", data)
+    setShowScanner(false)
+
     try {
-      const qrData = JSON.parse(data)
-      if (qrData.userId && qrData.redeemCode) {
-        // Find session by user ID and redeem code via API
-        const response = await fetch(`/api/admin/find-session?userId=${qrData.userId}&redeemCode=${qrData.redeemCode}`)
-        if (response.ok) {
-          const sessionData = await response.json()
-          if (sessionData.session) {
-            await validateSession(sessionData.session.id, qrData.redeemCode)
-          } else {
-            setError("Session tidak ditemukan atau sudah divalidasi")
-          }
+      setError("")
+      setSuccess("")
+
+      let qrData
+      try {
+        qrData = JSON.parse(data)
+      } catch (parseErr) {
+        // If it's not JSON, treat as plain redeem code
+        console.log("Data is not JSON, treating as redeem code:", data)
+        await handleRedeemCodeValidation(data.trim().toUpperCase())
+        return
+      }
+
+      // Handle JSON QR data - use find session first, then validate
+      if (qrData.redeemCode) {
+        console.log("Processing QR data with redeemCode:", qrData.redeemCode)
+
+        // First find the session
+        const sessionData = await ApiClient.findSession({
+          userId: qrData.userId,
+          redeemCode: qrData.redeemCode
+        })
+
+        if (sessionData.session) {
+          await validateSession(sessionData.session.id, qrData.redeemCode)
         } else {
           setError("Session tidak ditemukan atau sudah divalidasi")
         }
       } else {
-        setError("Format QR code tidak valid")
+        setError("Format QR code tidak valid - redeemCode tidak ditemukan")
       }
     } catch (err) {
-      setError("QR code tidak valid")
+      console.error("QR scan error:", err)
+      setError("Terjadi kesalahan saat memproses QR code")
     }
-    setShowScanner(false)
   }
 
-  const handleManualValidation = async () => {
-    if (!manualCode.trim()) {
-      setError("Masukkan kode redeem")
-      return
-    }
-
+  const handleRedeemCodeValidation = async (redeemCode: string) => {
     try {
-      const response = await fetch(`/api/admin/find-session?redeemCode=${manualCode.trim().toUpperCase()}`)
-      if (response.ok) {
-        const sessionData = await response.json()
-        if (sessionData.session) {
-          await validateSession(sessionData.session.id, manualCode.trim().toUpperCase())
-        } else {
-          setError("Kode redeem tidak ditemukan atau sudah divalidasi")
-        }
+      // First find the session by redeem code
+      const sessionData = await ApiClient.findSession({ redeemCode })
+
+      if (sessionData.session) {
+        await validateSession(sessionData.session.id, redeemCode)
       } else {
         setError("Kode redeem tidak ditemukan atau sudah divalidasi")
       }
     } catch (err) {
-      setError("Kode redeem tidak valid")
+      console.error("Redeem code validation error:", err)
+      setError("Kode redeem tidak valid atau terjadi kesalahan")
     }
+  }
+
+  const handleManualValidation = async () => {
+    const code = manualCode.trim().toUpperCase()
+
+    if (!code) {
+      setError("Masukkan kode redeem")
+      return
+    }
+
+    if (code.length !== 8) {
+      setError("Kode redeem harus 8 karakter")
+      return
+    }
+
+    await handleRedeemCodeValidation(code)
+  }
+
+  const handleScanError = (scanError: string) => {
+    setError(`Scanner Error: ${scanError}`)
+    console.error("Scanner error:", scanError)
   }
 
   const handleLogout = async () => {
@@ -183,87 +255,223 @@ export default function AdminPage() {
       session.redeemCode.includes(searchTerm.toUpperCase()),
   )
 
+  // Auto-clear error after 8 seconds
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => setError(""), 8000)
+      return () => clearTimeout(timer)
+    }
+  }, [error])
+
+  // Auto-clear success after 5 seconds
+  useEffect(() => {
+    if (success) {
+      const timer = setTimeout(() => setSuccess(""), 5000)
+      return () => clearTimeout(timer)
+    }
+  }, [success])
+
+  const formatDateTime = (dateString: string) => {
+    return new Date(dateString).toLocaleString("id-ID", {
+      dateStyle: "short",
+      timeStyle: "short",
+    })
+  }
+
+  const isExpired = (expiresAt: string) => {
+    return new Date(expiresAt) < new Date()
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-muted/30 to-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="h-8 w-8 animate-spin mx-auto mb-4 border-2 border-primary border-t-transparent rounded-full" />
-          <p>Memuat dashboard admin...</p>
+        <div className="text-center space-y-4">
+          <div className="h-12 w-12 animate-spin mx-auto border-4 border-primary border-t-transparent rounded-full" />
+          <div className="space-y-2">
+            <p className="text-lg font-semibold">Memuat Dashboard Admin</p>
+            <p className="text-sm text-muted-foreground">Mohon tunggu sebentar...</p>
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-muted/30 to-background p-4">
-      <div className="container mx-auto max-w-6xl py-8">
+    <div className="min-h-screen bg-gradient-to-br from-background via-muted/30 to-background">
+      <div className="container mx-auto max-w-7xl p-4 py-6">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-3">
-            <div className="h-12 w-12 rounded-lg bg-primary flex items-center justify-center">
-              <Scan className="h-7 w-7 text-primary-foreground" />
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-8 space-y-4 lg:space-y-0">
+          <div className="flex items-center gap-4">
+            <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg">
+              <Scan className="h-8 w-8 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="font-bold text-xl text-foreground">Admin Dashboard</h1>
-              <p className="text-sm text-muted-foreground">Validasi QR Code Pemilih</p>
+              <h1 className="font-bold text-2xl text-foreground">Admin Dashboard</h1>
+              <p className="text-muted-foreground">Sistem Validasi QR Code Pemilihan Presma</p>
             </div>
           </div>
+
           <div className="flex items-center gap-4">
             <div className="text-right">
-              <p className="font-semibold">{admin?.name}</p>
-              <p className="text-sm text-muted-foreground">{admin?.role}</p>
+              <p className="font-semibold text-lg">{admin?.name}</p>
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary" className="text-xs">
+                  {admin?.role}
+                </Badge>
+                <div className={`h-2 w-2 rounded-full ${showScanner ? 'bg-green-500' : 'bg-gray-400'}`} />
+                <span className="text-xs text-muted-foreground">
+                  Scanner {showScanner ? 'Aktif' : 'Tidak Aktif'}
+                </span>
+              </div>
             </div>
-            <Button variant="outline" onClick={handleLogout}>
+            <Button variant="outline" onClick={handleLogout} className="shadow-sm">
               <LogOut className="mr-2 h-4 w-4" />
               Logout
             </Button>
           </div>
         </div>
 
+        {/* Alerts */}
         {error && (
-          <Alert variant="destructive" className="mb-6">
+          <Alert variant="destructive" className="mb-6 shadow-sm">
             <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
+            <AlertDescription className="font-medium">{error}</AlertDescription>
           </Alert>
         )}
 
         {success && (
-          <Alert className="mb-6 border-green-200 bg-green-50">
+          <Alert className="mb-6 border-green-200 bg-green-50 shadow-sm">
             <CheckCircle className="h-4 w-4 text-green-600" />
-            <AlertDescription className="text-green-800">{success}</AlertDescription>
+            <AlertDescription className="text-green-800 font-medium">{success}</AlertDescription>
           </Alert>
         )}
 
-        <Tabs defaultValue="scan" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="scan">Scan QR Code</TabsTrigger>
-            <TabsTrigger value="pending">Menunggu Validasi</TabsTrigger>
-            <TabsTrigger value="recent">Validasi Terbaru</TabsTrigger>
+        {/* Stats Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+          <Card className="shadow-sm border-l-4 border-l-blue-500">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <Users className="h-4 w-4" />
+                Total Users
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-blue-600">{stats.totalUsers}</div>
+              <p className="text-xs text-muted-foreground">Mahasiswa terdaftar</p>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-sm border-l-4 border-l-orange-500">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <Clock className="h-4 w-4" />
+                Pending
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-orange-600">{pendingSessions.length}</div>
+              <p className="text-xs text-muted-foreground">Menunggu validasi</p>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-sm border-l-4 border-l-green-500">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <UserCheck className="h-4 w-4" />
+                Tervalidasi
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">{stats.totalValidated}</div>
+              <p className="text-xs text-muted-foreground">Total tervalidasi</p>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-sm border-l-4 border-l-purple-500">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <Activity className="h-4 w-4" />
+                Hari Ini
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-purple-600">{stats.todayValidations}</div>
+              <p className="text-xs text-muted-foreground">Validasi hari ini</p>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-sm border-l-4 border-l-indigo-500">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <TrendingUp className="h-4 w-4" />
+                Sudah Voting
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-indigo-600">{stats.totalVoted}</div>
+              <p className="text-xs text-muted-foreground">Sudah memilih</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Main Content */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          <TabsList className="grid w-full grid-cols-3 shadow-sm">
+            <TabsTrigger value="scan" className="flex items-center gap-2">
+              <QrCode className="h-4 w-4" />
+              Scan QR Code
+            </TabsTrigger>
+            <TabsTrigger value="pending" className="flex items-center gap-2">
+              <Clock className="h-4 w-4" />
+              Menunggu Validasi
+              {pendingSessions.length > 0 && (
+                <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 text-xs">
+                  {pendingSessions.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="recent" className="flex items-center gap-2">
+              <CheckCircle className="h-4 w-4" />
+              Riwayat Validasi
+            </TabsTrigger>
           </TabsList>
 
           {/* QR Scanner Tab */}
           <TabsContent value="scan" className="space-y-6">
-            <div className="grid md:grid-cols-2 gap-6">
-              {/* QR Scanner */}
-              <Card>
+            <div className="grid lg:grid-cols-2 gap-6">
+              {/* QR Scanner Card */}
+              <Card className="shadow-sm">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Camera className="h-5 w-5" />
                     Scan QR Code
                   </CardTitle>
-                  <CardDescription>Gunakan kamera untuk memindai QR code mahasiswa</CardDescription>
+                  <CardDescription>
+                    Gunakan kamera untuk memindai QR code mahasiswa yang ingin memilih
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
                     {!showScanner ? (
-                      <Button onClick={() => setShowScanner(true)} className="w-full" size="lg">
-                        <QrCode className="mr-2 h-5 w-5" />
-                        Buka Scanner
-                      </Button>
+                      <div className="space-y-4">
+                        <div className="p-6 border-2 border-dashed border-muted-foreground/25 rounded-lg text-center">
+                          <Camera className="h-12 w-12 mx-auto mb-4 text-muted-foreground/50" />
+                          <p className="text-muted-foreground mb-4">Kamera belum aktif</p>
+                        </div>
+                        <Button onClick={() => setShowScanner(true)} className="w-full" size="lg">
+                          <QrCode className="mr-2 h-5 w-5" />
+                          Aktifkan Scanner
+                        </Button>
+                      </div>
                     ) : (
                       <div className="space-y-4">
-                        <QRScanner onScan={handleQRScan} onError={(err) => setError(err)} />
-                        <Button variant="outline" onClick={() => setShowScanner(false)} className="w-full">
+                        <QRScanner onScan={handleQRScan} onError={handleScanError} />
+                        <Button
+                          variant="outline"
+                          onClick={() => setShowScanner(false)}
+                          className="w-full"
+                        >
+                          <Camera className="mr-2 h-4 w-4" />
                           Tutup Scanner
                         </Button>
                       </div>
@@ -272,32 +480,46 @@ export default function AdminPage() {
                 </CardContent>
               </Card>
 
-              {/* Manual Input */}
-              <Card>
+              {/* Manual Input Card */}
+              <Card className="shadow-sm">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Search className="h-5 w-5" />
                     Input Manual
                   </CardTitle>
-                  <CardDescription>Masukkan kode redeem secara manual jika QR tidak dapat dipindai</CardDescription>
+                  <CardDescription>
+                    Masukkan kode redeem secara manual jika QR code tidak dapat dipindai
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="manual-code">Kode Redeem (8 karakter)</Label>
+                      <Label htmlFor="manual-code">Kode Redeem</Label>
                       <Input
                         id="manual-code"
-                        placeholder="Contoh: ABC12345"
+                        placeholder="Masukkan 8 karakter kode (contoh: ABC12345)"
                         value={manualCode}
                         onChange={(e) => setManualCode(e.target.value.toUpperCase())}
                         maxLength={8}
                         disabled={validating}
+                        className="font-mono text-center text-lg"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !validating && manualCode.trim() && manualCode.length === 8) {
+                            handleManualValidation()
+                          }
+                        }}
                       />
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>Format: 8 karakter huruf/angka</span>
+                        <span>{manualCode.length}/8</span>
+                      </div>
                     </div>
+
                     <Button
                       onClick={handleManualValidation}
-                      disabled={validating || !manualCode.trim()}
+                      disabled={validating || !manualCode.trim() || manualCode.length !== 8}
                       className="w-full"
+                      size="lg"
                     >
                       {validating ? (
                         <>
@@ -315,88 +537,163 @@ export default function AdminPage() {
                 </CardContent>
               </Card>
             </div>
+
+            {/* Quick Instructions */}
+            <Card className="shadow-sm bg-muted/30">
+              <CardHeader>
+                <CardTitle className="text-base">Petunjuk Validasi</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="grid md:grid-cols-2 gap-4 text-sm">
+                  <div className="space-y-2">
+                    <h4 className="font-semibold flex items-center gap-2">
+                      <QrCode className="h-4 w-4" />
+                      Scan QR Code:
+                    </h4>
+                    <ul className="space-y-1 text-muted-foreground ml-6">
+                      <li>• Aktifkan scanner kamera</li>
+                      <li>• Arahkan ke QR code mahasiswa</li>
+                      <li>• Tunggu hingga terdeteksi otomatis</li>
+                    </ul>
+                  </div>
+                  <div className="space-y-2">
+                    <h4 className="font-semibold flex items-center gap-2">
+                      <Search className="h-4 w-4" />
+                      Input Manual:
+                    </h4>
+                    <ul className="space-y-1 text-muted-foreground ml-6">
+                      <li>• Minta kode redeem dari mahasiswa</li>
+                      <li>• Masukkan 8 karakter kode</li>
+                      <li>• Tekan Enter atau klik tombol validasi</li>
+                    </ul>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* Pending Sessions Tab */}
           <TabsContent value="pending" className="space-y-6">
-            <Card>
+            <Card className="shadow-sm">
               <CardHeader>
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
                   <div>
                     <CardTitle className="flex items-center gap-2">
-                      <Clock className="h-5 w-5" />
+                      <Clock className="h-5 w-5 text-orange-500" />
                       Menunggu Validasi ({filteredPendingSessions.length})
                     </CardTitle>
-                    <CardDescription>Daftar mahasiswa yang menunggu validasi kode</CardDescription>
+                    <CardDescription>
+                      Daftar mahasiswa yang sudah generate QR code dan menunggu validasi
+                    </CardDescription>
                   </div>
-                  <Button variant="outline" onClick={loadData}>
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    Refresh
+                  <Button variant="outline" onClick={loadData} disabled={loading} className="shadow-sm">
+                    <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                    Refresh Data
                   </Button>
                 </div>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
+                  {/* Search */}
                   <div className="flex items-center space-x-2">
                     <Search className="h-4 w-4 text-muted-foreground" />
                     <Input
                       placeholder="Cari berdasarkan nama, NIM, atau kode redeem..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="max-w-sm"
+                      className="max-w-md"
                     />
+                    {searchTerm && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSearchTerm("")}
+                      >
+                        Clear
+                      </Button>
+                    )}
                   </div>
 
-                  <div className="rounded-md border">
+                  {/* Table */}
+                  <div className="rounded-lg border overflow-hidden">
                     <Table>
                       <TableHeader>
-                        <TableRow>
-                          <TableHead>Mahasiswa</TableHead>
-                          <TableHead>Kode Redeem</TableHead>
-                          <TableHead>Waktu Dibuat</TableHead>
-                          <TableHead>Expires</TableHead>
-                          <TableHead>Aksi</TableHead>
+                        <TableRow className="bg-muted/50">
+                          <TableHead className="font-semibold">Mahasiswa</TableHead>
+                          <TableHead className="font-semibold">Kode Redeem</TableHead>
+                          <TableHead className="font-semibold">Dibuat</TableHead>
+                          <TableHead className="font-semibold">Kadaluarsa</TableHead>
+                          <TableHead className="font-semibold text-center">Aksi</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {filteredPendingSessions.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                              Tidak ada session yang menunggu validasi
+                            <TableCell colSpan={5} className="text-center py-12">
+                              <div className="space-y-2">
+                                <Clock className="h-12 w-12 mx-auto text-muted-foreground/50" />
+                                <p className="text-lg font-medium text-muted-foreground">
+                                  {searchTerm ? "Tidak ada hasil pencarian" : "Tidak ada session pending"}
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                  {searchTerm
+                                    ? "Coba kata kunci lain atau hapus filter pencarian"
+                                    : "Semua mahasiswa sudah divalidasi atau belum ada yang generate QR"
+                                  }
+                                </p>
+                              </div>
                             </TableCell>
                           </TableRow>
                         ) : (
                           filteredPendingSessions.map((session) => (
-                            <TableRow key={session.id}>
+                            <TableRow key={session.id} className="hover:bg-muted/30">
                               <TableCell>
-                                <div>
-                                  <p className="font-semibold">{session.user?.name}</p>
-                                  <p className="text-sm text-muted-foreground">
-                                    {session.user?.nim} • {session.user?.prodi}
+                                <div className="space-y-1">
+                                  <p className="font-semibold text-foreground">
+                                    {session.user?.name || 'N/A'}
                                   </p>
+                                  <div className="text-sm text-muted-foreground space-y-0.5">
+                                    <p>NIM: {session.user?.nim || 'N/A'}</p>
+                                    <p>Prodi: {session.user?.prodi || 'N/A'}</p>
+                                  </div>
                                 </div>
                               </TableCell>
                               <TableCell>
-                                <Badge variant="outline" className="font-mono">
+                                <Badge variant="outline" className="font-mono text-sm px-3 py-1">
                                   {session.redeemCode}
                                 </Badge>
                               </TableCell>
                               <TableCell>
-                                {new Date(session.createdAt).toLocaleString("id-ID", {
-                                  dateStyle: "short",
-                                  timeStyle: "short",
-                                })}
+                                <div className="text-sm">
+                                  {formatDateTime(session.createdAt)}
+                                </div>
                               </TableCell>
                               <TableCell>
-                                {new Date(session.expiresAt).toLocaleString("id-ID", {
-                                  dateStyle: "short",
-                                  timeStyle: "short",
-                                })}
+                                <div className={`text-sm ${isExpired(session.expiresAt)
+                                  ? 'text-red-600 font-semibold'
+                                  : 'text-foreground'
+                                  }`}>
+                                  {formatDateTime(session.expiresAt)}
+                                  {isExpired(session.expiresAt) && (
+                                    <Badge variant="destructive" className="ml-2 text-xs">
+                                      Expired
+                                    </Badge>
+                                  )}
+                                </div>
                               </TableCell>
-                              <TableCell>
-                                <Button size="sm" onClick={() => validateSession(session.id)} disabled={validating}>
-                                  <CheckCircle className="mr-2 h-4 w-4" />
-                                  Validasi
+                              <TableCell className="text-center">
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleRedeemCodeValidation(session.redeemCode)}
+                                  disabled={validating || isExpired(session.expiresAt)}
+                                  className="shadow-sm"
+                                >
+                                  {validating ? (
+                                    <div className="mr-2 h-3 w-3 animate-spin border border-white border-t-transparent rounded-full" />
+                                  ) : (
+                                    <CheckCircle className="mr-2 h-4 w-4" />
+                                  )}
+                                  {isExpired(session.expiresAt) ? 'Expired' : 'Validasi'}
                                 </Button>
                               </TableCell>
                             </TableRow>
@@ -412,59 +709,105 @@ export default function AdminPage() {
 
           {/* Recent Validations Tab */}
           <TabsContent value="recent" className="space-y-6">
-            <Card>
+            <Card className="shadow-sm">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <CheckCircle className="h-5 w-5" />
-                  Validasi Terbaru ({recentValidations.length})
-                </CardTitle>
-                <CardDescription>10 validasi terakhir yang dilakukan</CardDescription>
+                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <CheckCircle className="h-5 w-5 text-green-500" />
+                      Riwayat Validasi ({recentValidations.length})
+                    </CardTitle>
+                    <CardDescription>
+                      50 validasi terakhir yang telah dilakukan oleh admin
+                    </CardDescription>
+                  </div>
+                  <Button variant="outline" onClick={loadData} disabled={loading} className="shadow-sm">
+                    <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                    Refresh Data
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
-                <div className="rounded-md border">
+                <div className="rounded-lg border overflow-hidden">
                   <Table>
                     <TableHeader>
-                      <TableRow>
-                        <TableHead>Mahasiswa</TableHead>
-                        <TableHead>Kode Redeem</TableHead>
-                        <TableHead>Waktu Validasi</TableHead>
-                        <TableHead>Status</TableHead>
+                      <TableRow className="bg-muted/50">
+                        <TableHead className="font-semibold">Mahasiswa</TableHead>
+                        <TableHead className="font-semibold">Kode Redeem</TableHead>
+                        <TableHead className="font-semibold">Dibuat</TableHead>
+                        <TableHead className="font-semibold">Divalidasi</TableHead>
+                        <TableHead className="font-semibold">Validator</TableHead>
+                        <TableHead className="font-semibold text-center">Status</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {recentValidations.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
-                            Belum ada validasi yang dilakukan
+                          <TableCell colSpan={6} className="text-center py-12">
+                            <div className="space-y-2">
+                              <CheckCircle className="h-12 w-12 mx-auto text-muted-foreground/50" />
+                              <p className="text-lg font-medium text-muted-foreground">
+                                Belum ada validasi
+                              </p>
+                              <p className="text-sm text-muted-foreground">
+                                Riwayat validasi akan muncul di sini setelah admin memvalidasi QR code mahasiswa
+                              </p>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ) : (
                         recentValidations.map((session) => (
-                          <TableRow key={session.id}>
+                          <TableRow key={session.id} className="hover:bg-muted/30">
                             <TableCell>
-                              <div>
-                                <p className="font-semibold">{session.user?.name}</p>
-                                <p className="text-sm text-muted-foreground">
-                                  {session.user?.nim} • {session.user?.prodi}
+                              <div className="space-y-1">
+                                <p className="font-semibold text-foreground">
+                                  {session.user?.name || 'N/A'}
                                 </p>
+                                <div className="text-sm text-muted-foreground space-y-0.5">
+                                  <p>NIM: {session.user?.nim || 'N/A'}</p>
+                                  <p>Prodi: {session.user?.prodi || 'N/A'}</p>
+                                </div>
                               </div>
                             </TableCell>
                             <TableCell>
-                              <Badge variant="outline" className="font-mono">
+                              <Badge variant="outline" className="font-mono text-sm px-3 py-1">
                                 {session.redeemCode}
                               </Badge>
                             </TableCell>
                             <TableCell>
-                              {new Date(session.createdAt).toLocaleString("id-ID", {
-                                dateStyle: "short",
-                                timeStyle: "short",
-                              })}
+                              <div className="text-sm">
+                                {formatDateTime(session.createdAt)}
+                              </div>
                             </TableCell>
                             <TableCell>
-                              <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
-                                <CheckCircle className="mr-1 h-3 w-3" />
-                                Tervalidasi
-                              </Badge>
+                              <div className="text-sm">
+                                {session.updatedAt ? formatDateTime(session.updatedAt) : 'N/A'}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="space-y-1">
+                                <p className="text-sm font-medium">
+                                  {session.validator?.name || admin?.name || 'N/A'}
+                                </p>
+                                {(session.validator?.role || admin?.role) && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    {session.validator?.role || admin?.role}
+                                  </Badge>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <div className="flex flex-col items-center space-y-1">
+                                <Badge className="bg-green-100 text-green-800 hover:bg-green-100 shadow-sm">
+                                  <CheckCircle className="mr-1 h-3 w-3" />
+                                  Tervalidasi
+                                </Badge>
+                                {session.isUsed && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    Sudah Vote
+                                  </Badge>
+                                )}
+                              </div>
                             </TableCell>
                           </TableRow>
                         ))
@@ -476,7 +819,87 @@ export default function AdminPage() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Bottom Status Bar */}
+        <Card className="mt-8 shadow-sm bg-gradient-to-r from-muted/30 to-muted/50">
+          <CardContent className="py-4">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
+              <div className="space-y-2 lg:space-y-0 lg:space-x-6 lg:flex lg:items-center">
+                <div className="flex items-center space-x-2">
+                  <div className="h-3 w-3 bg-orange-500 rounded-full"></div>
+                  <span className="text-sm font-medium">
+                    Pending: <span className="font-bold">{pendingSessions.length}</span>
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <div className="h-3 w-3 bg-green-500 rounded-full"></div>
+                  <span className="text-sm font-medium">
+                    Tervalidasi: <span className="font-bold">{stats.totalValidated}</span>
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <div className="h-3 w-3 bg-purple-500 rounded-full"></div>
+                  <span className="text-sm font-medium">
+                    Hari ini: <span className="font-bold">{stats.todayValidations}</span>
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-2">
+                  <div className={`h-2 w-2 rounded-full ${showScanner ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
+                  <span className="text-sm text-muted-foreground">
+                    QR Scanner {showScanner ? 'Aktif' : 'Tidak Aktif'}
+                  </span>
+                </div>
+
+                <div className="flex items-center space-x-2 text-xs text-muted-foreground">
+                  <Activity className="h-3 w-3" />
+                  <span>Auto-refresh setiap 15 detik</span>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Floating Action Buttons for Mobile */}
+        <div className="fixed bottom-6 right-6 lg:hidden space-y-3">
+          {activeTab === 'scan' && !showScanner && (
+            <Button
+              onClick={() => setShowScanner(true)}
+              size="lg"
+              className="h-14 w-14 rounded-full shadow-lg"
+            >
+              <QrCode className="h-6 w-6" />
+            </Button>
+          )}
+
+          <Button
+            onClick={loadData}
+            variant="outline"
+            size="lg"
+            className="h-12 w-12 rounded-full shadow-lg bg-background"
+            disabled={loading}
+          >
+            <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
       </div>
+
+      {/* Loading Overlay for actions */}
+      {validating && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="p-6 space-y-4 max-w-sm mx-4">
+            <div className="text-center space-y-3">
+              <div className="h-8 w-8 animate-spin mx-auto border-4 border-primary border-t-transparent rounded-full"></div>
+              <p className="font-semibold">Memvalidasi Session</p>
+              <p className="text-sm text-muted-foreground">
+                Mohon tunggu, sedang memproses validasi...
+              </p>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }

@@ -4,43 +4,90 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { CheckCircle, Vote, User, Calendar, LogOut } from "@/lib/icons"
+import { CheckCircle, Vote, User, Calendar, LogOut, Loader2 } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { getMockUser, clearMockUser, mockDatabase } from "@/lib/mock-auth"
+import Image from "next/image"
+
+interface User {
+  id: string
+  name: string
+  email: string
+  nim: string
+  hasVoted: boolean
+}
+
+interface VoteData {
+  id: string
+  candidateName: string
+  candidateNim: string
+  createdAt: string
+}
+
+interface VotingStats {
+  candidateId: string
+  candidateName: string
+  voteCount: number
+  percentage: string
+}
 
 export default function SuccessPage() {
-  const [user, setUser] = useState<any>(null)
-  const [voteData, setVoteData] = useState<any>(null)
+  const [user, setUser] = useState<User | null>(null)
+  const [voteData, setVoteData] = useState<VoteData | null>(null)
+  const [votingStats, setVotingStats] = useState<VotingStats[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
   const router = useRouter()
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        const mockUser = getMockUser()
-        if (!mockUser) {
+        // Check authentication
+        const authResponse = await fetch('/api/auth/me', {
+          method: 'GET',
+          credentials: 'include',
+        })
+
+        if (!authResponse.ok) {
           router.push("/login")
           return
         }
 
-        if (!mockUser.hasVoted) {
+        const userData = await authResponse.json()
+        
+        if (!userData.hasVoted) {
           router.push("/generate-code")
           return
         }
 
-        setUser(mockUser)
+        setUser(userData)
 
-        // Get vote data from mock database
-        const userVote = mockDatabase.votes.find((vote) => vote.userId === mockUser.email)
-        if (userVote) {
-          const candidate = mockDatabase.candidates.find((c) => c.id === userVote.candidateId)
-          setVoteData({
-            ...userVote,
-            candidate,
-          })
+        // Get voting status including vote data
+        const statusResponse = await fetch('/api/voting-status', {
+          method: 'GET',
+          credentials: 'include',
+        })
+
+        if (statusResponse.ok) {
+          const statusData = await statusResponse.json()
+          if (statusData.vote) {
+            setVoteData(statusData.vote)
+          }
         }
+
+        // Get voting statistics
+        const statsResponse = await fetch('/api/vote', {
+          method: 'GET',
+          credentials: 'include',
+        })
+
+        if (statsResponse.ok) {
+          const statsData = await statsResponse.json()
+          setVotingStats(statsData.stats || [])
+        }
+
       } catch (err) {
         console.error("Error loading data:", err)
+        setError("Terjadi kesalahan saat memuat data")
       } finally {
         setLoading(false)
       }
@@ -50,16 +97,40 @@ export default function SuccessPage() {
   }, [router])
 
   const handleLogout = async () => {
-    clearMockUser()
-    router.push("/")
+    try {
+      // Call logout API if you have one, or just clear cookies
+      const response = await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      })
+      
+      // Redirect regardless of logout API response
+      router.push("/")
+    } catch (err) {
+      // Still redirect even if logout fails
+      router.push("/")
+    }
   }
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-muted/30 to-background flex items-center justify-center">
         <div className="text-center">
-          <div className="h-8 w-8 animate-spin mx-auto mb-4 border-2 border-primary border-t-transparent rounded-full" />
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
           <p>Memuat data...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background via-muted/30 to-background flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-600">{error}</p>
+          <Button onClick={() => router.push("/")} className="mt-4">
+            Kembali ke Beranda
+          </Button>
         </div>
       </div>
     )
@@ -127,21 +198,19 @@ export default function SuccessPage() {
                   </div>
                 </div>
 
-                {voteData?.candidate && (
+                {voteData && (
                   <div className="border-t pt-4">
                     <p className="text-sm text-muted-foreground mb-2">Kandidat yang Dipilih</p>
                     <div className="flex items-center gap-4 p-4 bg-muted/50 rounded-lg">
                       <div className="relative w-16 h-16">
-                        <img
-                          src={voteData.candidate.photo || "/placeholder.svg?height=64&width=64"}
-                          alt={voteData.candidate.name}
-                          className="w-full h-full rounded-full object-cover"
-                        />
+                        <div className="w-full h-full rounded-full bg-gray-200 flex items-center justify-center">
+                          <User className="h-8 w-8 text-gray-400" />
+                        </div>
                       </div>
                       <div>
-                        <h3 className="font-semibold text-lg">{voteData.candidate.name}</h3>
+                        <h3 className="font-semibold text-lg">{voteData.candidateName}</h3>
                         <p className="text-sm text-muted-foreground">
-                          {voteData.candidate.nim} • {voteData.candidate.prodi}
+                          NIM: {voteData.candidateNim}
                         </p>
                       </div>
                     </div>
@@ -174,32 +243,39 @@ export default function SuccessPage() {
           </Card>
 
           {/* Voting Results Preview */}
-          <Card className="bg-blue-50 border-blue-200">
-            <CardHeader>
-              <CardTitle className="text-blue-800">Hasil Sementara (Testing)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {mockDatabase.getResults().map((candidate, index) => (
-                  <div key={candidate.id} className="flex items-center justify-between p-3 bg-white rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-sm font-bold text-blue-800">
-                        {index + 1}
+          {votingStats.length > 0 && (
+            <Card className="bg-blue-50 border-blue-200">
+              <CardHeader>
+                <CardTitle className="text-blue-800">Hasil Sementara</CardTitle>
+                <CardDescription className="text-blue-600">
+                  Data real-time dari sistem voting
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {votingStats
+                    .sort((a, b) => b.voteCount - a.voteCount)
+                    .map((candidate, index) => (
+                      <div key={candidate.candidateId} className="flex items-center justify-between p-3 bg-white rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-sm font-bold text-blue-800">
+                            {index + 1}
+                          </div>
+                          <div>
+                            <p className="font-semibold text-sm">{candidate.candidateName}</p>
+                            <p className="text-xs text-muted-foreground">{candidate.percentage}%</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold text-blue-800">{candidate.voteCount}</p>
+                          <p className="text-xs text-muted-foreground">suara</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-semibold text-sm">{candidate.name}</p>
-                        <p className="text-xs text-muted-foreground">{candidate.prodi}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-bold text-blue-800">{candidate.voteCount}</p>
-                      <p className="text-xs text-muted-foreground">suara</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                    ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Important Notes */}
           <Card className="bg-yellow-50 border-yellow-200">

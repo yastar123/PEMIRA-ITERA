@@ -1,8 +1,7 @@
 "use client"
 
 import type React from "react"
-
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -10,8 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Vote, ArrowLeft, Loader2 } from "@/lib/icons"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
-
+import { useRouter, useSearchParams } from "next/navigation"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -19,6 +17,34 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const redirect = searchParams.get("redirect")
+
+  // Cek apakah user sudah login → redirect langsung
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const res = await fetch("/api/auth/me")
+        if (res.ok) {
+          const { user } = await res.json()
+          if (redirect) {
+            router.replace(redirect)
+            return
+          }
+          if (user.role === "SUPER_ADMIN") {
+            router.replace("/super-admin")
+          } else if (user.role === "ADMIN") {
+            router.replace("/admin")
+          } else {
+            router.replace(user.hasVoted ? "/success" : "/generate-code")
+          }
+        }
+      } catch (err) {
+        console.error("Session check error:", err)
+      }
+    }
+    checkSession()
+  }, [redirect, router])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -26,12 +52,9 @@ export default function LoginPage() {
     setError("")
 
     try {
-      // Call the login API
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       })
 
@@ -42,23 +65,28 @@ export default function LoginPage() {
         return
       }
 
-      // Redirect based on role
+      console.log("Login successful:", result.user)
+
+      // Tunggu cookie terset
+      await new Promise((resolve) => setTimeout(resolve, 100))
+
+      // Redirect prioritas: query ?redirect
+      if (redirect) {
+        router.replace(redirect)
+        return
+      }
+
+      // Redirect default berdasarkan role
       const user = result.user
-      switch (user.role) {
-        case "SUPER_ADMIN":
-          router.push("/super-admin")
-          break
-        case "ADMIN":
-          router.push("/admin")
-          break
-        default:
-          if (user.hasVoted) {
-            router.push("/success")
-          } else {
-            router.push("/generate-code")
-          }
+      if (user.role === "SUPER_ADMIN") {
+        router.replace("/super-admin")
+      } else if (user.role === "ADMIN") {
+        router.replace("/admin")
+      } else {
+        router.replace(user.hasVoted ? "/success" : "/generate-code")
       }
     } catch (err) {
+      console.error("Login error:", err)
       setError("Terjadi kesalahan saat login")
     } finally {
       setLoading(false)
@@ -70,7 +98,10 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         {/* Header */}
         <div className="text-center mb-8">
-          <Link href="/" className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6"
+          >
             <ArrowLeft className="h-4 w-4" />
             Kembali ke Beranda
           </Link>
@@ -141,7 +172,10 @@ export default function LoginPage() {
             </form>
 
             <div className="mt-4 text-center">
-              <Link href="/forgot-password" className="text-sm text-blue-600 hover:underline">
+              <Link
+                href="/forgot-password"
+                className="text-sm text-blue-600 hover:underline"
+              >
                 Lupa Password?
               </Link>
             </div>
@@ -156,7 +190,6 @@ export default function LoginPage() {
             </div>
           </CardContent>
         </Card>
-
       </div>
     </div>
   )

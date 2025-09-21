@@ -1,139 +1,50 @@
+// app/api/candidates/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { requireAdmin, getUserFromRequest } from '@/lib/session'
+import { getUserFromRequest } from '@/lib/session'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const candidates = await prisma.candidate.findMany({
-      where: { isActive: true },
-      include: {
-        _count: {
-          select: { votes: true }
-        }
-      },
-      orderBy: { createdAt: 'asc' }
-    })
+    console.log('GET /api/candidates called')
 
-    const candidatesWithVoteCount = candidates.map(candidate => ({
-      id: candidate.id,
-      name: candidate.name,
-      nim: candidate.nim,
-      prodi: candidate.prodi,
-      visi: candidate.visi,
-      misi: candidate.misi,
-      photo: candidate.photo,
-      voteCount: candidate._count.votes
-    }))
-
-    return NextResponse.json({ candidates: candidatesWithVoteCount })
-  } catch (error) {
-    console.error('Get candidates error:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
-  }
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    // Option 1: Use the helper function (Recommended)
-    const user = await requireAdmin(request)
+    const user = await getUserFromRequest(request)
     
-    const { name, nim, prodi, visi, misi, photo } = await request.json()
-    
-    if (!name || !nim || !prodi || !visi || !misi) {
-      return NextResponse.json(
-        { error: 'All required fields must be filled' },
-        { status: 400 }
-      )
-    }
-
-    const candidate = await prisma.candidate.create({
-      data: {
-        name,
-        nim,
-        prodi,
-        visi,
-        misi,
-        photo: photo || null
-      }
-    })
-
-    return NextResponse.json({ candidate })
-    
-  } catch (error) {
-    // Handle specific authentication errors
-    if (error instanceof Error) {
-      if (error.message === 'Authentication required') {
-        return NextResponse.json(
-          { error: 'Not authenticated' }, 
-          { status: 401 }
-        )
-      }
-      if (error.message === 'Admin access required') {
-        return NextResponse.json(
-          { error: 'Unauthorized' }, 
-          { status: 403 }
-        )
-      }
-    }
-    
-    console.error('Create candidate error:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
-  }
-}
-
-// Alternative - Manual cookie check with correct name
-export async function POST_ALTERNATIVE(request: NextRequest) {
-  try {
-    // Use the correct cookie name 'user-session'
-    const sessionCookie = request.cookies.get('user-session')?.value
-    if (!sessionCookie) {
+    if (!user) {
       return NextResponse.json(
         { error: 'Not authenticated' },
         { status: 401 }
       )
     }
 
-    // Find user directly
-    const user = await prisma.user.findUnique({
-      where: { id: sessionCookie }
-    })
+    console.log('Loading candidates for user:', user.id)
 
-    if (!user || (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN')) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 403 }
-      )
-    }
-
-    const { name, nim, prodi, visi, misi, photo } = await request.json()
-    
-    if (!name || !nim || !prodi || !visi || !misi) {
-      return NextResponse.json(
-        { error: 'All required fields must be filled' },
-        { status: 400 }
-      )
-    }
-
-    const candidate = await prisma.candidate.create({
-      data: {
-        name,
-        nim,
-        prodi,
-        visi,
-        misi,
-        photo: photo || null
+    // Get active candidates
+    const candidates = await prisma.candidate.findMany({
+      where: { 
+        isActive: true 
+      },
+      select: {
+        id: true,
+        name: true,
+        nim: true,
+        prodi: true,
+        visi: true,
+        misi: true,
+        photo: true,
+        isActive: true
+      },
+      orderBy: { 
+        createdAt: 'asc' 
       }
     })
 
-    return NextResponse.json({ candidate })
+    console.log('Found candidates:', candidates.length)
+
+    return NextResponse.json({
+      candidates
+    })
   } catch (error) {
-    console.error('Create candidate error:', error)
+    console.error('Get candidates error:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

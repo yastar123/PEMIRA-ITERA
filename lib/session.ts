@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
 export function getSession(token: string): string | null {
@@ -14,47 +14,91 @@ export function getSession(token: string): string | null {
 export async function getUserFromRequest(request: NextRequest) {
   try {
     const sessionCookie = request.cookies.get('user-session')?.value
-    
+
     if (!sessionCookie) {
       return null
     }
 
     const user = await prisma.user.findUnique({
-      where: { id: sessionCookie }
+      where: { id: sessionCookie },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        nim: true,
+        prodi: true,
+        role: true,
+        hasVoted: true,
+        createdAt: true
+      }
     })
 
     return user
-  } catch {
+  } catch (error) {
+    console.error('Error getting user from request:', error)
     return null
   }
 }
 
 export async function requireAuth(request: NextRequest) {
   const user = await getUserFromRequest(request)
-  
+
   if (!user) {
-    throw new Error('Authentication required')
+    return NextResponse.json(
+      { error: 'Authentication required' },
+      { status: 401 }
+    )
   }
-  
+
   return user
 }
 
 export async function requireAdmin(request: NextRequest) {
-  const user = await requireAuth(request)
-  
-  if (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN') {
-    throw new Error('Admin access required')
+  const user = await getUserFromRequest(request)
+
+  if (!user) {
+    return NextResponse.json(
+      { error: 'Authentication required' },
+      { status: 401 }
+    )
   }
-  
+
+  if (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN') {
+    return NextResponse.json(
+      { error: 'Admin access required' },
+      { status: 403 }
+    )
+  }
+
   return user
 }
 
 export async function requireSuperAdmin(request: NextRequest) {
-  const user = await requireAuth(request)
-  
-  if (user.role !== 'SUPER_ADMIN') {
-    throw new Error('Super admin access required')
+  const user = await getUserFromRequest(request)
+
+  if (!user) {
+    return NextResponse.json(
+      { error: 'Authentication required' },
+      { status: 401 }
+    )
   }
-  
+
+  if (user.role !== 'SUPER_ADMIN') {
+    return NextResponse.json(
+      { error: 'Super admin access required' },
+      { status: 403 }
+    )
+  }
+
   return user
+}
+
+// Additional helper functions for better compatibility
+export async function getUser(request: NextRequest) {
+  return getUserFromRequest(request)
+}
+
+// Helper function untuk cek apakah response adalah error
+export function isErrorResponse(response: any): response is NextResponse {
+  return response instanceof NextResponse && response.status >= 400
 }

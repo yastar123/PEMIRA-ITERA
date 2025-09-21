@@ -12,10 +12,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Vote, User, CheckCircle, Loader2, AlertCircle, Eye } from "@/lib/icons"
+import { Vote, User, CheckCircle, Loader2, AlertCircle, Eye } from "lucide-react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
-import { getMockUser, mockDatabase } from "@/lib/mock-auth"
 
 interface Candidate {
   id: string
@@ -28,13 +27,23 @@ interface Candidate {
   isActive: boolean
 }
 
+interface User {
+  id: string
+  name: string
+  email: string
+  nim: string
+  role: string
+  hasVoted: boolean
+}
+
 export default function VotePage() {
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<User | null>(null)
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [selectedCandidate, setSelectedCandidate] = useState<string>("")
   const [loading, setLoading] = useState(true)
   const [voting, setVoting] = useState(false)
   const [error, setError] = useState("")
+  const [success, setSuccess] = useState("")
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
   const [showDetailDialog, setShowDetailDialog] = useState(false)
   const [detailCandidate, setDetailCandidate] = useState<Candidate | null>(null)
@@ -43,33 +52,84 @@ export default function VotePage() {
   useEffect(() => {
     const checkAuthAndLoadData = async () => {
       try {
-        const mockUser = getMockUser()
-        if (!mockUser) {
+        console.log('Checking auth and loading data...')
+
+        // Check authentication
+        const authResponse = await fetch('/api/auth/me', {
+          method: 'GET',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        })
+
+        if (!authResponse.ok) {
+          console.log('Not authenticated, redirecting to login')
           router.push("/login")
           return
         }
 
-        if (mockUser.hasVoted) {
+        const userData = await authResponse.json()
+        console.log('User data:', userData)
+
+        if (userData.hasVoted) {
+          console.log('User already voted, redirecting to success')
           router.push("/success")
           return
         }
 
+        setUser(userData)
+
         // Check if user has validated voting session
-        if (
-          !mockDatabase.votingSession ||
-          !mockDatabase.votingSession.isValidated ||
-          mockDatabase.votingSession.isUsed
-        ) {
+        const sessionResponse = await fetch('/api/qr-code', {
+          method: 'GET',
+          credentials: 'include',
+        })
+
+        if (!sessionResponse.ok) {
+          console.log('No voting session, redirecting to generate-code')
           router.push("/generate-code")
           return
         }
 
-        setUser(mockUser)
+        const sessionData = await sessionResponse.json()
+        console.log('Session data:', sessionData)
 
-        // Load candidates from mock database
-        setCandidates(mockDatabase.candidates.filter((c) => c.isActive))
+        if (!sessionData.session?.isValidated) {
+          console.log('Session not validated, redirecting to generate-code')
+          router.push("/generate-code")
+          return
+        }
+
+        if (sessionData.session?.isUsed) {
+          console.log('Session already used, redirecting to success')
+          router.push("/success")
+          return
+        }
+
+        // Load candidates
+        console.log('Loading candidates...')
+        const candidatesResponse = await fetch('/api/candidates', {
+          method: 'GET',
+          credentials: 'include',
+        })
+
+        if (!candidatesResponse.ok) {
+          throw new Error('Failed to load candidates')
+        }
+
+        const candidatesData = await candidatesResponse.json()
+        console.log('Candidates data:', candidatesData)
+
+        setCandidates(candidatesData.candidates || [])
+
+        if (candidatesData.candidates?.length === 0) {
+          setError('Tidak ada kandidat yang tersedia saat ini')
+        }
+
       } catch (err) {
-        setError("Terjadi kesalahan saat memuat data")
+        console.error('Error loading data:', err)
+        setError("Terjadi kesalahan saat memuat data: " + (err instanceof Error ? err.message : 'Unknown error'))
       } finally {
         setLoading(false)
       }
@@ -83,24 +143,41 @@ export default function VotePage() {
 
     setVoting(true)
     setError("")
+    setSuccess("")
 
     try {
-      // Simulate API delay
-      await new Promise((resolve) => setTimeout(resolve, 1500))
+      console.log('Submitting vote for candidate:', selectedCandidate)
 
-      // Submit vote using mock database
-      const success = mockDatabase.submitVote(selectedCandidate)
+      const response = await fetch('/api/vote', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          candidateId: selectedCandidate
+        })
+      })
 
-      if (!success) {
-        setError("Gagal menyimpan vote")
-        setVoting(false)
-        return
+      const data = await response.json()
+      console.log('Vote response:', data)
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to submit vote')
       }
 
-      // Success - redirect to success page
-      router.push("/success")
+      setSuccess('Vote berhasil disimpan!')
+      
+      // Redirect to success page after short delay
+      setTimeout(() => {
+        router.push("/success")
+      }, 2000)
+
     } catch (err) {
-      setError("Terjadi kesalahan saat menyimpan vote")
+      console.error('Vote error:', err)
+      setError(err instanceof Error ? err.message : "Terjadi kesalahan saat menyimpan vote")
+      setShowConfirmDialog(false)
+    } finally {
       setVoting(false)
     }
   }
@@ -146,38 +223,50 @@ export default function VotePage() {
           </div>
         </div>
 
-        {error && (
-          <Alert variant="destructive" className="mb-6">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
+        {/* Alert Messages */}
+        <div className="mb-6 space-y-4">
+          {success && (
+            <Alert className="bg-green-50 border-green-200">
+              <CheckCircle className="h-4 w-4 text-green-600" />
+              <AlertDescription className="text-green-800">{success}</AlertDescription>
+            </Alert>
+          )}
+
+          {error && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+        </div>
 
         {/* Voter Info */}
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <User className="h-5 w-5" />
-              Informasi Pemilih
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <p className="text-sm text-muted-foreground">Nama</p>
-                <p className="font-semibold">{user?.name}</p>
+        {user && (
+          <Card className="mb-8">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <User className="h-5 w-5" />
+                Informasi Pemilih
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Nama</p>
+                  <p className="font-semibold">{user.name}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Email</p>
+                  <p className="font-semibold">{user.email}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">NIM</p>
+                  <p className="font-semibold">{user.nim}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Email</p>
-                <p className="font-semibold">{user?.email}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Role</p>
-                <p className="font-semibold">{user?.role}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Instructions */}
         <Alert className="mb-8">
@@ -190,84 +279,95 @@ export default function VotePage() {
         </Alert>
 
         {/* Candidates Grid */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-          {candidates.map((candidate) => (
-            <Card
-              key={candidate.id}
-              className={`cursor-pointer transition-all duration-200 hover:shadow-lg ${
-                selectedCandidate === candidate.id ? "ring-2 ring-primary bg-primary/5" : "hover:shadow-md"
-              }`}
-              onClick={() => handleCandidateSelect(candidate.id)}
-            >
-              <CardHeader className="text-center">
-                <div className="relative w-32 h-32 mx-auto mb-4">
-                  <Image
-                    src={candidate.photo || "/placeholder.svg?height=128&width=128"}
-                    alt={candidate.name}
-                    fill
-                    className="rounded-full object-cover"
-                  />
-                  {selectedCandidate === candidate.id && (
-                    <div className="absolute -top-2 -right-2">
-                      <div className="h-8 w-8 bg-primary rounded-full flex items-center justify-center">
-                        <CheckCircle className="h-5 w-5 text-primary-foreground" />
-                      </div>
+        {candidates.length > 0 ? (
+          <>
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+              {candidates.map((candidate) => (
+                <Card
+                  key={candidate.id}
+                  className={`cursor-pointer transition-all duration-200 hover:shadow-lg ${
+                    selectedCandidate === candidate.id ? "ring-2 ring-primary bg-primary/5" : "hover:shadow-md"
+                  }`}
+                  onClick={() => handleCandidateSelect(candidate.id)}
+                >
+                  <CardHeader className="text-center">
+                    <div className="relative w-32 h-32 mx-auto mb-4">
+                      <Image
+                        src={candidate.photo || "/placeholder.svg?height=128&width=128"}
+                        alt={candidate.name}
+                        fill
+                        className="rounded-full object-cover"
+                      />
+                      {selectedCandidate === candidate.id && (
+                        <div className="absolute -top-2 -right-2">
+                          <div className="h-8 w-8 bg-primary rounded-full flex items-center justify-center">
+                            <CheckCircle className="h-5 w-5 text-primary-foreground" />
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-                <CardTitle className="text-lg">{candidate.name}</CardTitle>
-                <CardDescription>
-                  <div className="space-y-1">
-                    <p>NIM: {candidate.nim}</p>
-                    <p>{candidate.prodi}</p>
-                  </div>
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  <div>
-                    <p className="text-sm font-semibold text-muted-foreground mb-1">Visi:</p>
-                    <p className="text-sm line-clamp-3">{candidate.visi}</p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full bg-transparent"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleShowDetail(candidate)
-                    }}
-                  >
-                    <Eye className="mr-2 h-4 w-4" />
-                    Lihat Detail
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                    <CardTitle className="text-lg">{candidate.name}</CardTitle>
+                    <CardDescription>
+                      <div className="space-y-1">
+                        <p>NIM: {candidate.nim}</p>
+                        <p>{candidate.prodi}</p>
+                      </div>
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-sm font-semibold text-muted-foreground mb-1">Visi:</p>
+                        <p className="text-sm line-clamp-3">{candidate.visi}</p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full bg-transparent"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleShowDetail(candidate)
+                        }}
+                      >
+                        <Eye className="mr-2 h-4 w-4" />
+                        Lihat Detail
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
 
-        {/* Vote Button */}
-        <div className="text-center">
-          <Button size="lg" onClick={handleConfirmVote} disabled={!selectedCandidate || voting} className="min-w-48">
-            {voting ? (
-              <>
-                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                Menyimpan Vote...
-              </>
-            ) : (
-              <>
-                <Vote className="mr-2 h-5 w-5" />
-                Vote Sekarang
-              </>
-            )}
-          </Button>
-          {selectedCandidate && (
-            <p className="text-sm text-muted-foreground mt-2">
-              Anda akan memilih: <strong>{candidates.find((c) => c.id === selectedCandidate)?.name}</strong>
-            </p>
-          )}
-        </div>
+            {/* Vote Button */}
+            <div className="text-center">
+              <Button size="lg" onClick={handleConfirmVote} disabled={!selectedCandidate || voting} className="min-w-48">
+                {voting ? (
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    Menyimpan Vote...
+                  </>
+                ) : (
+                  <>
+                    <Vote className="mr-2 h-5 w-5" />
+                    Vote Sekarang
+                  </>
+                )}
+              </Button>
+              {selectedCandidate && (
+                <p className="text-sm text-muted-foreground mt-2">
+                  Anda akan memilih: <strong>{candidates.find((c) => c.id === selectedCandidate)?.name}</strong>
+                </p>
+              )}
+            </div>
+          </>
+        ) : (
+          <Card>
+            <CardContent className="pt-6 text-center">
+              <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <p className="text-muted-foreground">Tidak ada kandidat yang tersedia saat ini.</p>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Confirmation Dialog */}
         <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
@@ -287,9 +387,7 @@ export default function VotePage() {
                         <Image
                           src={
                             candidates.find((c) => c.id === selectedCandidate)?.photo ||
-                            "/placeholder.svg?height=64&width=64" ||
-                            "/placeholder.svg" ||
-                            "/placeholder.svg"
+                            "/placeholder.svg?height=64&width=64"
                           }
                           alt={candidates.find((c) => c.id === selectedCandidate)?.name || ""}
                           fill
@@ -311,7 +409,7 @@ export default function VotePage() {
               )}
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setShowConfirmDialog(false)}>
+              <Button variant="outline" onClick={() => setShowConfirmDialog(false)} disabled={voting}>
                 Batal
               </Button>
               <Button onClick={handleVoteSubmit} disabled={voting}>
@@ -376,6 +474,7 @@ export default function VotePage() {
                     handleCandidateSelect(detailCandidate.id)
                     setShowDetailDialog(false)
                   }}
+                  disabled={voting}
                 >
                   Pilih Kandidat Ini
                 </Button>

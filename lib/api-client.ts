@@ -1,5 +1,5 @@
-// API client utility for making authenticated requests
-export class ApiClient {
+// lib/api-client.ts
+class ApiClient {
   private static baseUrl = '/api'
 
   private static async request(endpoint: string, options: RequestInit = {}) {
@@ -10,6 +10,7 @@ export class ApiClient {
         'Content-Type': 'application/json',
         ...options.headers,
       },
+      credentials: 'include', // Include cookies for session
       ...options,
     })
 
@@ -104,7 +105,6 @@ export class ApiClient {
     return response.json()
   }
 
-  // Update candidate
   static async updateCandidate(id: string, data: any) {
     console.log('📤 Updating candidate:', id, data)
 
@@ -136,7 +136,6 @@ export class ApiClient {
     return result
   }
 
-  // Delete candidate
   static async deleteCandidate(id: string) {
     const response = await fetch(`/api/candidates/${id}`, {
       method: 'DELETE',
@@ -181,6 +180,37 @@ export class ApiClient {
     return this.request('/votes')
   }
 
+  // Admin methods for the admin page
+  static async getPendingSessions() {
+    return this.request('/admin/pending-sessions')
+  }
 
+  static async getRecentValidations() {
+    return this.request('/admin/recent-validations')
+  }
 
+  static async getAdminStats() {
+    return this.request('/admin/stats')
+  }
+
+  static async findSession(params: { userId?: string; redeemCode?: string }) {
+    const query = new URLSearchParams()
+    if (params.userId) query.append('userId', params.userId)
+    if (params.redeemCode) query.append('redeemCode', params.redeemCode)
+    
+    return this.request(`/admin/find-session?${query.toString()}`)
+  }
+
+  // QR Code generation
+  static async generateQRCode() {
+    return this.request('/generate-qr', {
+      method: 'POST',
+    })
+  }
+
+  static async getQRSession() {
+    return this.request('/generate-qr')
+  }
 }
+
+export { ApiClient }
