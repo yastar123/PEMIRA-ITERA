@@ -103,8 +103,8 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Vote error:', error)
     
-    // Handle unique constraint violation (double voting attempt)
-    if (error instanceof Error && error.message.includes('Unique constraint')) {
+    // Handle Prisma unique constraint violation (double voting attempt)
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'P2002') {
       return NextResponse.json(
         { error: 'You have already voted' },
         { status: 400 }
