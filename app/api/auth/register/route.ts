@@ -21,9 +21,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate ITERA email format
-    if (!email.endsWith('@student.itera.ac.id')) {
+    if (!email.endsWith('@student.itera.ac.id') && !email.endsWith('@itera.ac.id')) {
       return NextResponse.json(
-        { error: 'Must use ITERA email address' },
+        { error: 'Must use ITERA email address (@itera.ac.id or @student.itera.ac.id)' },
         { status: 400 }
       )
     }
