@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import jwt from 'jsonwebtoken'
 
-export function getSession(token: string): string | null {
+export function getSession(token: string): any | null {
   try {
-    // In a real app, you'd decode a JWT token here
-    // For simplicity, we're using the user ID directly as the token
-    return token
+    const jwtSecret = process.env.JWT_SECRET || 'itera-election-secret-key-2025'
+    const decoded = jwt.verify(token, jwtSecret)
+    return decoded
   } catch {
     return null
   }
@@ -13,14 +14,23 @@ export function getSession(token: string): string | null {
 
 export async function getUserFromRequest(request: NextRequest) {
   try {
-    const sessionCookie = request.cookies.get('user-session')?.value
+    const sessionToken = request.cookies.get('user-session')?.value
 
-    if (!sessionCookie) {
+    if (!sessionToken) {
       return null
     }
 
+    // Verify JWT token
+    const jwtSecret = process.env.JWT_SECRET || 'itera-election-secret-key-2025'
+    const decoded = jwt.verify(sessionToken, jwtSecret) as any
+    
+    if (!decoded || !decoded.userId) {
+      return null
+    }
+
+    // Get fresh user data from database
     const user = await prisma.user.findUnique({
-      where: { id: sessionCookie },
+      where: { id: decoded.userId },
       select: {
         id: true,
         email: true,
@@ -32,6 +42,11 @@ export async function getUserFromRequest(request: NextRequest) {
         createdAt: true
       }
     })
+
+    // Verify user still exists and email matches token
+    if (!user || user.email !== decoded.email) {
+      return null
+    }
 
     return user
   } catch (error) {

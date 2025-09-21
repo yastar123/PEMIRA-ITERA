@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
+import jwt from 'jsonwebtoken'
 
 export async function POST(request: NextRequest) {
   try {
@@ -57,11 +58,24 @@ export async function POST(request: NextRequest) {
       message: 'Login berhasil'
     })
 
-    // Set session cookie
-    response.cookies.set('user-session', user.id, {
+    // Create JWT session token
+    const jwtSecret = process.env.JWT_SECRET || 'itera-election-secret-key-2025'
+    const sessionToken = jwt.sign(
+      { 
+        userId: user.id, 
+        email: user.email, 
+        role: user.role,
+        iat: Math.floor(Date.now() / 1000)
+      },
+      jwtSecret,
+      { expiresIn: '7d' }
+    )
+
+    // Set secure session cookie
+    response.cookies.set('user-session', sessionToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      sameSite: 'strict',
       maxAge: 60 * 60 * 24 * 7, // 7 days
       path: '/'
     })

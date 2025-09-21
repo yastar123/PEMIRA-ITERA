@@ -10,11 +10,11 @@ export async function POST(request: NextRequest) {
       message: 'Logged out successfully'
     })
 
-    // Clear the session cookie
+    // Clear the session cookie securely
     response.cookies.set('user-session', '', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      sameSite: 'strict',
       maxAge: 0, // This will delete the cookie
       path: '/' // Make sure to clear from root path
     })
