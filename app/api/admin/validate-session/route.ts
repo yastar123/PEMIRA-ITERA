@@ -5,6 +5,11 @@ import { requireAdmin } from '@/lib/session'
 export async function POST(request: NextRequest) {
   try {
     const admin = await requireAdmin(request)
+    
+    // Check if requireAdmin returned an error response
+    if (admin instanceof NextResponse) {
+      return admin
+    }
 
     const { qrCode, redeemCode } = await request.json()
 
@@ -56,12 +61,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Validate the session
+    // Check if session is already used (additional security)
+    if (session.isUsed) {
+      return NextResponse.json(
+        { error: 'Session already used' },
+        { status: 400 }
+      )
+    }
+
+    // Validate the session with proper timestamp
+    const validatedAt = new Date()
     const updatedSession = await prisma.votingSession.update({
       where: { id: session.id },
       data: {
         isValidated: true,
-        validatedBy: admin.id
+        validatedBy: admin.id,
+        validatedAt: validatedAt
       },
       include: {
         user: {

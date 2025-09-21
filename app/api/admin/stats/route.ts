@@ -57,11 +57,11 @@ export async function GET(request: NextRequest) {
         }
       }),
 
-      // Today's validations
+      // Today's validations - using validatedAt instead of createdAt for accuracy
       prisma.votingSession.count({
         where: {
           isValidated: true,
-          createdAt: {
+          validatedAt: {
             gte: today,
             lt: tomorrow
           }

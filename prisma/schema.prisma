@@ -59,6 +59,7 @@ model VotingSession {
   isValidated Boolean  @default(false)
   isUsed      Boolean  @default(false)
   validatedBy String?
+  validatedAt DateTime?
   expiresAt   DateTime
   createdAt   DateTime @default(now())
   
