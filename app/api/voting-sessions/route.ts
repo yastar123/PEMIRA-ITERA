@@ -1,40 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { getSession } from '@/lib/session'
+import { getSession, getUserFromRequest } from '@/lib/session'
 
 export async function POST(request: NextRequest) {
   try {
-    const authToken = request.cookies.get('auth-token')?.value
-
-    if (!authToken) {
+    const user = await getUserFromRequest(request)
+    
+    if (!user) {
       return NextResponse.json(
         { error: 'Not authenticated' },
         { status: 401 }
       )
     }
 
-    const userId = getSession(authToken)
-    if (!userId) {
+    if (user.hasVoted) {
       return NextResponse.json(
-        { error: 'Invalid session' },
-        { status: 401 }
+        { error: 'User has already voted' },
+        { status: 400 }
       )
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: userId }
-    })
-
-    if (!user) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      )
-    }
-
-    // Check if user already has a voting session
+    // Check if user already has an active voting session
     const existingSession = await prisma.votingSession.findFirst({
-      where: { userId: user.id }
+      where: { 
+        userId: user.id,
+        expiresAt: {
+          gt: new Date() // Only get non-expired sessions
+        },
+        isUsed: false
+      }
     })
 
     if (existingSession) {
@@ -85,25 +79,17 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const authToken = request.cookies.get('auth-token')?.value
-
-    if (!authToken) {
+    const user = await getUserFromRequest(request)
+    
+    if (!user) {
       return NextResponse.json(
         { error: 'Not authenticated' },
         { status: 401 }
       )
     }
 
-    const userId = getSession(authToken)
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'Invalid session' },
-        { status: 401 }
-      )
-    }
-
     const session = await prisma.votingSession.findFirst({
-      where: { userId: userId },
+      where: { userId: user.id },
       include: {
         user: {
           select: {

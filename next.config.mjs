@@ -27,10 +27,8 @@ const nextConfig = {
       },
     ];
   },
-  // Configure for Replit environment - allow all dev origins
-  experimental: {
-    allowedDevOrigins: true,
-  },
+  // Configure for Replit environment
+  // Remove experimental.allowedDevOrigins as it's not supported in Next.js 14
   // Configure hostname
   env: {
     HOSTNAME: '0.0.0.0',
