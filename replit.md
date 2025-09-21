@@ -18,15 +18,16 @@ This is a Next.js-based voting application for ITERA (Institut Teknologi Sumater
 - Real-time vote tracking
 - Responsive design with Indonesian language support
 
-## Recent Changes (September 20, 2025)
-- Successfully imported from GitHub and configured for Replit environment
-- Installed all npm dependencies and resolved Next.js setup
-- Created PostgreSQL database and migrated Prisma schema
-- Configured Next.js for Replit proxy compatibility with allowedHosts
-- Set up development workflow on port 5000 with 0.0.0.0 hostname
-- Added cache control headers for proper iframe display
-- Configured autoscale deployment for production
-- Application is fully functional and running successfully
+## Recent Changes (September 21, 2025)
+**MAJOR SECURITY & VALIDATION UPGRADES:**
+- **CRITICAL SECURITY FIX**: Replaced vulnerable plain user ID cookies with secure JWT-based authentication system
+- **Enhanced Database Schema**: Added `validatedAt` timestamp field to VotingSession model for accurate admin statistics
+- **Improved Admin Stats**: Updated statistics calculation to use proper validation timestamps instead of creation times
+- **Robust Error Handling**: Implemented Prisma P2002 error code detection for better vote constraint handling
+- **Session State Validation**: Enhanced validation workflow to prevent validation of already-used sessions
+- **Complete E2E Testing**: Verified entire voting workflow from QR generation through admin validation to vote submission
+- **Production Security**: JWT tokens with httpOnly and sameSite=strict cookies, 7-day expiration
+- **Data Integrity**: Atomic transactions for vote creation, user status updates, and session marking
 
 ## Development Setup
 - **Dev Server**: Runs on port 5000 with 0.0.0.0 hostname for Replit compatibility
