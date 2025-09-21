@@ -7,7 +7,10 @@ export async function PUT(
   { params }: { params: { userId: string } }
 ) {
   try {
-    await requireAdmin(request)
+    const authResult = await requireAdmin(request)
+    if (authResult instanceof NextResponse) {
+      return authResult
+    }
     
     const { role } = await request.json()
     const { userId } = params

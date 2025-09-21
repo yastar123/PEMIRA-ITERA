@@ -5,7 +5,10 @@ import { requireAdmin } from '@/lib/session'
 
 export async function GET(request: NextRequest) {
   try {
-    await requireAdmin(request)
+    const authResult = await requireAdmin(request)
+    if (authResult instanceof NextResponse) {
+      return authResult
+    }
     
     const sessions = await prisma.votingSession.findMany({
       where: {

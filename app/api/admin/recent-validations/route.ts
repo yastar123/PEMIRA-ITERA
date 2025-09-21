@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
                 }
             },
             orderBy: {
-                updatedAt: 'desc'
+                createdAt: 'desc'
             },
             take: 50 // Last 50 validations
         })
