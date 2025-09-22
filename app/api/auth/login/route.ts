@@ -49,6 +49,20 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('Login successful for user:', user.email)
+    // Log login event (for monitoring)
+    try {
+      await prisma.adminLog.create({
+        data: {
+          adminId: user.id,
+          action: 'LOGIN_SUCCESS',
+          target: user.email,
+          details: { role: user.role },
+          ipAddress: request.headers.get('x-forwarded-for') || request.ip || ''
+        }
+      })
+    } catch (e) {
+      console.warn('Failed to log login event:', e)
+    }
 
     // Create response with user data (exclude password)
     const { password: _, ...userWithoutPassword } = user

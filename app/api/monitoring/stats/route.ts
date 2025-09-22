@@ -1,16 +1,14 @@
-// /api/admin/stats/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { requireAdmin } from '@/lib/session'
+import { requireMonitoringAccess } from '@/lib/session'
 
 export async function GET(request: NextRequest) {
   try {
-    const authResult = await requireAdmin(request)
+    const authResult = await requireMonitoringAccess(request)
     if (authResult instanceof NextResponse) {
       return authResult
     }
-    
-    // Run all queries in parallel for performance and compute fields expected by client
+
     const [
       totalUsers,
       totalVotes,
@@ -18,13 +16,9 @@ export async function GET(request: NextRequest) {
       pendingValidations,
       candidateWithCounts
     ] = await Promise.all([
-      // Total registered voters
       prisma.user.count({ where: { role: 'VOTER' } }),
-      // Total votes cast
       prisma.vote.count(),
-      // Active candidates count
       prisma.candidate.count({ where: { isActive: true } }),
-      // Pending (not validated, not used, not expired) sessions
       prisma.votingSession.count({
         where: {
           isValidated: false,
@@ -32,7 +26,6 @@ export async function GET(request: NextRequest) {
           expiresAt: { gte: new Date() }
         }
       }),
-      // Candidate vote counts
       prisma.candidate.findMany({
         where: { isActive: true },
         include: { _count: { select: { votes: true } } },
@@ -58,12 +51,8 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({ stats, voteStats })
-
   } catch (error) {
-    console.error('Stats error:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+    console.error('Monitoring stats error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

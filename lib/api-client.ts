@@ -211,6 +211,23 @@ class ApiClient {
   static async getQRSession() {
     return this.request('/generate-qr')
   }
+
+  // Monitoring endpoints (read-only dashboards)
+  static async getMonitoringStats() {
+    return this.request('/monitoring/stats')
+  }
+
+  static async getMonitoringRecentValidations() {
+    return this.request('/monitoring/recent-validations')
+  }
+
+  static async getMonitoringLogs() {
+    return this.request('/monitoring/logs')
+  }
+
+  static async getMonitoringSystemStatus() {
+    return this.request('/monitoring/system-status')
+  }
 }
 
 export { ApiClient }

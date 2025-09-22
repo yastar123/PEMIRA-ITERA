@@ -19,17 +19,22 @@ interface VotingSession {
   expiresAt: string
 }
 
-interface User {
+interface MeUser {
   id: string
   name: string
   email: string
   nim: string
+  prodi?: string
   role: string
   hasVoted: boolean
 }
 
+interface MeResponse {
+  user: MeUser
+}
+
 export default function GenerateCodePage() {
-  const [user, setUser] = useState<User | null>(null)
+  const [user, setUser] = useState<MeResponse | null>(null)
   const [votingSession, setVotingSession] = useState<VotingSession | null>(null)
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
@@ -60,17 +65,23 @@ export default function GenerateCodePage() {
           return
         }
 
-        const userData = await response.json()
+        const userData: MeResponse = await response.json()
         console.log('User data:', userData)
         
-        if (userData.hasVoted) {
-          console.log('User already voted')
-          setUser(userData) // Set user for the blocked state component
-          setLoading(false)
+        // Only VOTER can access this page
+        if (userData.user?.role && userData.user.role !== 'VOTER') {
+          router.push('/')
+          return
+        }
+
+        if (userData.user?.hasVoted) {
+          console.log('User already voted, redirecting to /success')
+          router.push("/success")
           return
         }
 
         setUser(userData)
+        console.log('User state after set:', userData) // Pindahkan logging ke sini
 
         // Check for existing voting session
         console.log('Checking for existing voting session...')
@@ -186,7 +197,7 @@ export default function GenerateCodePage() {
     setSuccess("")
 
     try {
-      console.log('Generating QR code for user:', user.id)
+      console.log('Generating QR code for user:', user.user.id)
       
       const response = await fetch('/api/qr-code', {
         method: 'POST',
@@ -229,6 +240,15 @@ export default function GenerateCodePage() {
     await generateQRCode()
   }
 
+  // Tambahkan console.log untuk debugging render
+  console.log('Render state:', {
+    loading,
+    user,
+    votingSession: votingSession ? 'exists' : 'null',
+    error,
+    success
+  })
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-muted/30 to-background flex items-center justify-center">
@@ -236,29 +256,12 @@ export default function GenerateCodePage() {
           <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
           <p>Memuat data...</p>
         </div>
-
-        {/* Alert Messages */}
-        <div className="mb-6 space-y-4">
-          {success && (
-            <Alert className="bg-green-50 border-green-200">
-              <CheckCircle className="h-4 w-4 text-green-600" />
-              <AlertDescription className="text-green-800">{success}</AlertDescription>
-            </Alert>
-          )}
-
-          {error && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-        </div>
       </div>
     )
   }
 
-  // Show blocked state if user has already voted
-  if (user && user.hasVoted) {
+  // Show blocked state if user has already voted (fallback if redirect didn't happen yet)
+  if (user && user.user?.hasVoted) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-muted/30 to-background flex items-center justify-center">
         <div className="container mx-auto max-w-2xl px-4">
@@ -304,19 +307,22 @@ export default function GenerateCodePage() {
           </div>
         </div>
 
-            {success && (
-              <Alert className="bg-green-50 border-green-200">
-                <CheckCircle className="h-4 w-4 text-green-600" />
-                <AlertDescription className="text-green-800">{success}</AlertDescription>
-              </Alert>
-            )}
+        {/* Alert Messages */}
+        <div className="mb-6 space-y-4">
+          {success && (
+            <Alert className="bg-green-50 border-green-200">
+              <CheckCircle className="h-4 w-4 text-green-600" />
+              <AlertDescription className="text-green-800">{success}</AlertDescription>
+            </Alert>
+          )}
 
-            {error && (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
+          {error && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+        </div>
 
         {/* User Info */}
         {user && (
@@ -331,20 +337,28 @@ export default function GenerateCodePage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-muted-foreground">Nama</p>
-                  <p className="font-semibold">{user.name}</p>
+                  <p className="font-semibold">{user.user.name || 'Tidak tersedia'}</p>
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Email</p>
-                  <p className="font-semibold">{user.email}</p>
+                  <p className="font-semibold">{user.user.email || 'Tidak tersedia'}</p>
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">NIM</p>
-                  <p className="font-semibold">{user.nim}</p>
+                  <p className="font-semibold">{user.user.nim || 'Tidak tersedia'}</p>
+                </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Program Studi</p>
+                    <p className="font-semibold">{user.user.prodi}</p>
+                  </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Role</p>
+                  <p className="font-semibold">{user.user.role || 'Tidak tersedia'}</p>
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Status</p>
-                  <Badge variant={user.hasVoted ? "default" : "secondary"}>
-                    {user.hasVoted ? "Sudah Voting" : "Belum Voting"}
+                  <Badge variant={user.user.hasVoted ? "default" : "secondary"}>
+                    {user.user.hasVoted ? "Sudah Voting" : "Belum Voting"}
                   </Badge>
                 </div>
               </div>
@@ -375,20 +389,6 @@ export default function GenerateCodePage() {
                   </>
                 )}
               </Button>
-
-              {/* Debug Info */}
-              {process.env.NODE_ENV === 'development' && (
-                <div className="mt-4 p-4 bg-gray-100 rounded-lg text-left">
-                  <h4 className="font-bold text-sm mb-2">Debug Info:</h4>
-                  <div className="text-xs space-y-1">
-                    <p>User ID: {user?.id || 'Not loaded'}</p>
-                    <p>User Email: {user?.email || 'Not loaded'}</p>
-                    <p>Has Voted: {user?.hasVoted ? 'Yes' : 'No'}</p>
-                    <p>Loading: {loading ? 'Yes' : 'No'}</p>
-                    <p>Generating: {generating ? 'Yes' : 'No'}</p>
-                  </div>
-                </div>
-              )}
             </CardContent>
           </Card>
         ) : (

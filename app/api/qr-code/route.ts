@@ -7,10 +7,10 @@ import QRCode from 'qrcode'
 export async function POST(request: NextRequest) {
   try {
     console.log('POST /api/qr-code called')
-    
+
     const user = await getUserFromRequest(request)
     console.log('User from request:', user ? { id: user.id, email: user.email } : null)
-    
+
     if (!user) {
       console.log('User not authenticated')
       return NextResponse.json(
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
 
     // Check if user already has an active voting session
     const existingSession = await prisma.votingSession.findFirst({
-      where: { 
+      where: {
         userId: user.id,
         expiresAt: {
           gt: new Date() // Only get non-expired sessions
@@ -45,9 +45,17 @@ export async function POST(request: NextRequest) {
 
     if (existingSession) {
       console.log('Returning existing session')
-      
+
+      // Create JSON data for QR code
+      const qrCodeData = {
+        userId: existingSession.userId,
+        redeemCode: existingSession.redeemCode,
+        sessionId: existingSession.id,
+        timestamp: existingSession.createdAt.getTime()
+      }
+
       // Return existing session if still valid
-      const qrCodeDataURL = await QRCode.toDataURL(existingSession.qrCode, {
+      const qrCodeDataURL = await QRCode.toDataURL(JSON.stringify(qrCodeData), {
         errorCorrectionLevel: 'M',
         type: 'image/png',
         quality: 0.92,
@@ -77,7 +85,7 @@ export async function POST(request: NextRequest) {
     // Generate new voting session
     const timestamp = Date.now().toString()
     const randomString = crypto.randomUUID().replace(/-/g, '').substring(0, 8).toUpperCase()
-    const qrCode = `ITERA${timestamp}${randomString}`
+    const qrCode = `ITERA${timestamp}${randomString}` // Keep this for database
     const redeemCode = crypto.randomUUID().replace(/-/g, '').substring(0, 8).toUpperCase()
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours from now
 
@@ -106,9 +114,17 @@ export async function POST(request: NextRequest) {
 
     console.log('Session created:', { id: session.id })
 
-    // Generate QR code image
-    console.log('Generating QR code image...')
-    const qrCodeDataURL = await QRCode.toDataURL(qrCode, {
+    // Create JSON data for QR code - THIS IS THE KEY FIX
+    const qrCodeData = {
+      userId: session.userId,
+      redeemCode: session.redeemCode,
+      sessionId: session.id,
+      timestamp: Date.now()
+    }
+
+    // Generate QR code image with JSON data
+    console.log('Generating QR code image with JSON data...')
+    const qrCodeDataURL = await QRCode.toDataURL(JSON.stringify(qrCodeData), {
       errorCorrectionLevel: 'M',
       type: 'image/png',
       quality: 0.92,
@@ -140,7 +156,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Generate QR error:', error)
     return NextResponse.json(
-      { 
+      {
         error: 'Internal server error',
         details: error instanceof Error ? error.message : 'Unknown error'
       },
@@ -152,10 +168,10 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     console.log('GET /api/qr-code called')
-    
+
     const user = await getUserFromRequest(request)
     console.log('User from request:', user ? { id: user.id, email: user.email } : null)
-    
+
     if (!user) {
       return NextResponse.json(
         { error: 'Not authenticated' },
@@ -165,7 +181,7 @@ export async function GET(request: NextRequest) {
 
     // Get current voting session
     const session = await prisma.votingSession.findFirst({
-      where: { 
+      where: {
         userId: user.id,
         expiresAt: {
           gt: new Date() // Only get non-expired sessions
@@ -182,8 +198,16 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Generate QR code image
-    const qrCodeDataURL = await QRCode.toDataURL(session.qrCode, {
+    // Create JSON data for QR code
+    const qrCodeData = {
+      userId: session.userId,
+      redeemCode: session.redeemCode,
+      sessionId: session.id,
+      timestamp: session.createdAt.getTime()
+    }
+
+    // Generate QR code image with JSON data
+    const qrCodeDataURL = await QRCode.toDataURL(JSON.stringify(qrCodeData), {
       errorCorrectionLevel: 'M',
       type: 'image/png',
       quality: 0.92,

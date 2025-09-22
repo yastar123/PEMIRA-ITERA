@@ -27,7 +27,7 @@ interface Candidate {
   isActive: boolean
 }
 
-interface User {
+interface MeUser {
   id: string
   name: string
   email: string
@@ -36,8 +36,12 @@ interface User {
   hasVoted: boolean
 }
 
+interface MeResponse {
+  user: MeUser
+}
+
 export default function VotePage() {
-  const [user, setUser] = useState<User | null>(null)
+  const [user, setUser] = useState<MeResponse | null>(null)
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [selectedCandidate, setSelectedCandidate] = useState<string>("")
   const [loading, setLoading] = useState(true)
@@ -70,13 +74,12 @@ export default function VotePage() {
           return
         }
 
-        const userData = await authResponse.json()
+        const userData: MeResponse = await authResponse.json()
         console.log('User data:', userData)
 
-        if (userData.hasVoted) {
-          console.log('User already voted')
-          setUser(userData) // Set user for the blocked state component
-          setLoading(false)
+        if (userData.user?.hasVoted) {
+          console.log('User already voted, redirecting to /success')
+          router.push("/success")
           return
         }
 
@@ -104,10 +107,8 @@ export default function VotePage() {
         }
 
         if (sessionData.session?.isUsed) {
-          console.log('Session already used')
-          setUser(userData) // Set user for the blocked state component
-          setSessionUsed(true) // Track that session is used
-          setLoading(false)
+          console.log('Session already used, redirecting to /success')
+          router.push("/success")
           return
         }
 
@@ -174,14 +175,11 @@ export default function VotePage() {
       
       // Immediately set blocked conditions to prevent further interaction
       setSessionUsed(true)
-      if (user) {
-        setUser({...user, hasVoted: true})
-      }
+      // mark local state as voted to prevent any further interactions until redirect happens
+      if (user) setUser({ user: { ...user.user, hasVoted: true } })
       
-      // Redirect to home page after short delay
-      setTimeout(() => {
-        router.push("/")
-      }, 2000)
+      // Redirect to success page immediately
+      router.push("/success")
 
     } catch (err) {
       console.error('Vote error:', err)
@@ -206,6 +204,8 @@ export default function VotePage() {
     setShowConfirmDialog(true)
   }
 
+  console.log("user: ", user)
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-muted/30 to-background flex items-center justify-center">
@@ -218,7 +218,7 @@ export default function VotePage() {
   }
 
   // Calculate blocked state consistently
-  const isBlocked = !!user && (user.hasVoted || sessionUsed)
+  const isBlocked = !!user && (user.user?.hasVoted || sessionUsed)
 
   // Show blocked state if user has already voted or session is used
   if (isBlocked) {
@@ -297,15 +297,15 @@ export default function VotePage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <p className="text-sm text-muted-foreground">Nama</p>
-                  <p className="font-semibold">{user.name}</p>
+                  <p className="font-semibold">{user.user.name}</p>
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Email</p>
-                  <p className="font-semibold">{user.email}</p>
+                  <p className="font-semibold">{user.user.email}</p>
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">NIM</p>
-                  <p className="font-semibold">{user.nim}</p>
+                  <p className="font-semibold">{user.user.nim}</p>
                 </div>
               </div>
             </CardContent>

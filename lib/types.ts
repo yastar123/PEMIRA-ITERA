@@ -1,4 +1,5 @@
 export type Role = "VOTER" | "ADMIN" | "SUPER_ADMIN"
+  | "MONITORING"
 
 export interface User {
   id: string

@@ -54,12 +54,12 @@ export default function SuccessPage() {
 
         const userData = await authResponse.json()
         
-        if (!userData.hasVoted) {
+        if (!userData.user?.hasVoted) {
           router.push("/generate-code")
           return
         }
 
-        setUser(userData)
+        setUser(userData.user)
 
         // Get voting status including vote data
         const statusResponse = await fetch('/api/voting-status', {

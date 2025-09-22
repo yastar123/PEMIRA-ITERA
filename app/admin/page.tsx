@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { QrCode, Scan, CheckCircle, Clock, AlertCircle, LogOut, RefreshCw, Search, Camera, Users, UserCheck, TrendingUp, Activity } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { ApiClient } from "@/lib/api-client"
-import QRScanner from "@/components/qr-scanner"
+import QRScannerTest from "@/components/QRScannerTest"
 
 interface VotingSession {
   id: string
@@ -159,6 +159,7 @@ export default function AdminPage() {
     }
   }
 
+  // Alternative fix for admin/page.tsx - handleQRScan function
   const handleQRScan = async (data: string) => {
     console.log("QR Data received:", data)
     setShowScanner(false)
@@ -167,34 +168,66 @@ export default function AdminPage() {
       setError("")
       setSuccess("")
 
+      // Clean the data
+      const cleanData = data.trim()
+
       let qrData
+      let redeemCode = ""
+
+      // Try to parse as JSON first (new format)
       try {
-        qrData = JSON.parse(data)
+        qrData = JSON.parse(cleanData)
+        if (qrData.redeemCode && qrData.sessionId) {
+          console.log("Processing JSON QR data:", qrData)
+          redeemCode = qrData.redeemCode
+
+          // Use the sessionId and redeemCode from JSON
+          await validateSession(qrData.sessionId, redeemCode)
+          return
+        }
       } catch (parseErr) {
-        // If it's not JSON, treat as plain redeem code
-        console.log("Data is not JSON, treating as redeem code:", data)
-        await handleRedeemCodeValidation(data.trim().toUpperCase())
+        console.log("Data is not JSON, checking other formats...")
+      }
+
+      // Check if it's ITERA format (old format)
+      if (cleanData.startsWith('ITERA') && cleanData.length > 13) {
+        console.log("Processing ITERA format QR:", cleanData)
+
+        // Find the session by qrCode field in database
+        try {
+          const response = await fetch('/api/admin/find-session-by-qr', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ qrCode: cleanData })
+          })
+
+          if (response.ok) {
+            const sessionData = await response.json()
+            if (sessionData.session) {
+              await validateSession(sessionData.session.id, sessionData.session.redeemCode)
+              return
+            }
+          }
+        } catch (err) {
+          console.error("Error finding session by QR code:", err)
+        }
+
+        setError("Session tidak ditemukan untuk QR code ini")
         return
       }
 
-      // Handle JSON QR data - use find session first, then validate
-      if (qrData.redeemCode) {
-        console.log("Processing QR data with redeemCode:", qrData.redeemCode)
-
-        // First find the session
-        const sessionData = await ApiClient.findSession({
-          userId: qrData.userId,
-          redeemCode: qrData.redeemCode
-        })
-
-        if (sessionData.session) {
-          await validateSession(sessionData.session.id, qrData.redeemCode)
-        } else {
-          setError("Session tidak ditemukan atau sudah divalidasi")
-        }
-      } else {
-        setError("Format QR code tidak valid - redeemCode tidak ditemukan")
+      // Check if it's a direct redeem code (8 characters)
+      if (/^[A-Z0-9]{8}$/.test(cleanData)) {
+        console.log("Processing direct redeem code:", cleanData)
+        await handleRedeemCodeValidation(cleanData)
+        return
       }
+
+      // If none of the formats match
+      setError("Format QR code tidak dikenali")
+      console.log("Unrecognized QR format:", cleanData)
+
     } catch (err) {
       console.error("QR scan error:", err)
       setError("Terjadi kesalahan saat memproses QR code")
@@ -310,7 +343,6 @@ export default function AdminPage() {
               <p className="text-muted-foreground">Sistem Validasi QR Code Pemilihan Presma</p>
             </div>
           </div>
-
           <div className="flex items-center gap-4">
             <div className="text-right">
               <p className="font-semibold text-lg">{admin?.name}</p>
@@ -465,7 +497,8 @@ export default function AdminPage() {
                       </div>
                     ) : (
                       <div className="space-y-4">
-                        <QRScanner onScan={handleQRScan} onError={handleScanError} />
+                        {/* Gunakan QRScannerTest dengan props yang benar */}
+                        <QRScannerTest onScan={handleQRScan} onError={handleScanError} />
                         <Button
                           variant="outline"
                           onClick={() => setShowScanner(false)}
@@ -475,7 +508,7 @@ export default function AdminPage() {
                           Tutup Scanner
                         </Button>
                       </div>
-                    )}
+                    )} 
                   </div>
                 </CardContent>
               </Card>
