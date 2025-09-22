@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "web"]
+modules = ["nodejs-20", "web", "postgresql-16"]
 
 [nix]
 channel = "stable-25_05"
@@ -42,10 +42,6 @@ externalPort = 3002
 [[ports]]
 localPort = 40255
 externalPort = 3000
-
-[[ports]]
-localPort = 40751
-externalPort = 3001
 
 [deployment]
 deploymentTarget = "autoscale"

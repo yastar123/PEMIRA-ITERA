@@ -30,8 +30,8 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
       // Try to import jsQR
       if (typeof window !== 'undefined') {
         // Check if jsQR is available via CDN first
-        if (window.jsQR) {
-          return window.jsQR
+        if ((window as any).jsQR) {
+          return (window as any).jsQR
         }
         
         // Try dynamic import

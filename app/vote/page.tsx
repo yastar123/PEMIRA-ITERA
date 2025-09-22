@@ -47,6 +47,7 @@ export default function VotePage() {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
   const [showDetailDialog, setShowDetailDialog] = useState(false)
   const [detailCandidate, setDetailCandidate] = useState<Candidate | null>(null)
+  const [sessionUsed, setSessionUsed] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -73,8 +74,9 @@ export default function VotePage() {
         console.log('User data:', userData)
 
         if (userData.hasVoted) {
-          console.log('User already voted, redirecting to success')
-          router.push("/success")
+          console.log('User already voted')
+          setUser(userData) // Set user for the blocked state component
+          setLoading(false)
           return
         }
 
@@ -102,8 +104,10 @@ export default function VotePage() {
         }
 
         if (sessionData.session?.isUsed) {
-          console.log('Session already used, redirecting to success')
-          router.push("/success")
+          console.log('Session already used')
+          setUser(userData) // Set user for the blocked state component
+          setSessionUsed(true) // Track that session is used
+          setLoading(false)
           return
         }
 
@@ -168,9 +172,15 @@ export default function VotePage() {
 
       setSuccess('Vote berhasil disimpan!')
       
-      // Redirect to success page after short delay
+      // Immediately set blocked conditions to prevent further interaction
+      setSessionUsed(true)
+      if (user) {
+        setUser({...user, hasVoted: true})
+      }
+      
+      // Redirect to home page after short delay
       setTimeout(() => {
-        router.push("/success")
+        router.push("/")
       }, 2000)
 
     } catch (err) {
@@ -202,6 +212,40 @@ export default function VotePage() {
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
           <p>Memuat data kandidat...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Calculate blocked state consistently
+  const isBlocked = !!user && (user.hasVoted || sessionUsed)
+
+  // Show blocked state if user has already voted or session is used
+  if (isBlocked) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background via-muted/30 to-background flex items-center justify-center">
+        <div className="container mx-auto max-w-2xl px-4">
+          <Card className="text-center">
+            <CardContent className="py-12">
+              <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-6" />
+              <h1 className="text-2xl font-bold mb-4">Vote Sudah Tercatat</h1>
+              <p className="text-lg text-muted-foreground mb-6">
+                Anda sudah melakukan vote. Terima kasih atas partisipasi Anda!
+              </p>
+              <Alert className="mb-6">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  Setiap mahasiswa hanya dapat memberikan satu suara dalam pemilihan ini.
+                </AlertDescription>
+              </Alert>
+              <Button 
+                onClick={() => router.push("/")} 
+                className="w-full sm:w-auto"
+              >
+                Kembali ke Beranda
+              </Button>
+            </CardContent>
+          </Card>
         </div>
       </div>
     )
