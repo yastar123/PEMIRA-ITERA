@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -13,6 +12,7 @@ import { QrCode, Scan, CheckCircle, Clock, AlertCircle, LogOut, RefreshCw, Searc
 import { useRouter } from "next/navigation"
 import { ApiClient } from "@/lib/api-client"
 import QRScannerTest from "@/components/QRScannerTest"
+import { toast } from "@/hooks/use-toast"
 
 interface VotingSession {
   id: string
@@ -49,8 +49,8 @@ export default function AdminPage() {
   const [admin, setAdmin] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [validating, setValidating] = useState(false)
-  const [error, setError] = useState("")
-  const [success, setSuccess] = useState("")
+  const [, setError] = useState("")
+  const [, setSuccess] = useState("")
   const [manualCode, setManualCode] = useState("")
   const [showScanner, setShowScanner] = useState(false)
   const [pendingSessions, setPendingSessions] = useState<VotingSession[]>([])
@@ -85,6 +85,7 @@ export default function AdminPage() {
       } catch (err) {
         console.error("Auth check error:", err)
         setError("Terjadi kesalahan saat memuat data")
+        toast({ title: "Gagal", description: "Terjadi kesalahan saat memuat data" })
         router.push("/login")
       } finally {
         setLoading(false)
@@ -143,16 +144,16 @@ export default function AdminPage() {
     try {
       // Use existing ApiClient method with sessionId and redeemCode
       const result = await ApiClient.validateSession(sessionId || '', redeemCode)
-      setSuccess(result.message || "Session berhasil divalidasi")
+      const message = result.message || "Session berhasil divalidasi"
+      setSuccess(message)
+      toast({ title: "Berhasil Validasi", description: message })
       setManualCode("")
       await loadData()
-
-      // Auto-clear success message after 5 seconds
-      setTimeout(() => setSuccess(""), 5000)
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Terjadi kesalahan saat validasi"
       setError(errorMessage)
+      toast({ title: "Gagal Validasi", description: errorMessage })
       console.error("Validation error:", err)
     } finally {
       setValidating(false)
@@ -226,11 +227,13 @@ export default function AdminPage() {
 
       // If none of the formats match
       setError("Format QR code tidak dikenali")
+      toast({ title: "QR Tidak Dikenali", description: "Format QR code tidak dikenali" })
       console.log("Unrecognized QR format:", cleanData)
 
     } catch (err) {
       console.error("QR scan error:", err)
       setError("Terjadi kesalahan saat memproses QR code")
+      toast({ title: "Gagal", description: "Terjadi kesalahan saat memproses QR code" })
     }
   }
 
@@ -243,10 +246,12 @@ export default function AdminPage() {
         await validateSession(sessionData.session.id, redeemCode)
       } else {
         setError("Kode redeem tidak ditemukan atau sudah divalidasi")
+        toast({ title: "Gagal Validasi", description: "Kode redeem tidak ditemukan atau sudah divalidasi" })
       }
     } catch (err) {
       console.error("Redeem code validation error:", err)
       setError("Kode redeem tidak valid atau terjadi kesalahan")
+      toast({ title: "Gagal Validasi", description: "Kode redeem tidak valid atau terjadi kesalahan" })
     }
   }
 
@@ -255,11 +260,13 @@ export default function AdminPage() {
 
     if (!code) {
       setError("Masukkan kode redeem")
+      toast({ title: "Input Tidak Lengkap", description: "Masukkan kode redeem" })
       return
     }
 
     if (code.length !== 8) {
       setError("Kode redeem harus 8 karakter")
+      toast({ title: "Format Salah", description: "Kode redeem harus 8 karakter" })
       return
     }
 
@@ -268,6 +275,7 @@ export default function AdminPage() {
 
   const handleScanError = (scanError: string) => {
     setError(`Scanner Error: ${scanError}`)
+    toast({ title: "Scanner Error", description: scanError })
     console.error("Scanner error:", scanError)
   }
 
@@ -288,21 +296,7 @@ export default function AdminPage() {
       session.redeemCode.includes(searchTerm.toUpperCase()),
   )
 
-  // Auto-clear error after 8 seconds
-  useEffect(() => {
-    if (error) {
-      const timer = setTimeout(() => setError(""), 8000)
-      return () => clearTimeout(timer)
-    }
-  }, [error])
-
-  // Auto-clear success after 5 seconds
-  useEffect(() => {
-    if (success) {
-      const timer = setTimeout(() => setSuccess(""), 5000)
-      return () => clearTimeout(timer)
-    }
-  }, [success])
+  // Inline alerts removed in favor of toast popups
 
   const formatDateTime = (dateString: string) => {
     return new Date(dateString).toLocaleString("id-ID", {
@@ -363,20 +357,7 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* Alerts */}
-        {error && (
-          <Alert variant="destructive" className="mb-6 shadow-sm">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription className="font-medium">{error}</AlertDescription>
-          </Alert>
-        )}
-
-        {success && (
-          <Alert className="mb-6 border-green-200 bg-green-50 shadow-sm">
-            <CheckCircle className="h-4 w-4 text-green-600" />
-            <AlertDescription className="text-green-800 font-medium">{success}</AlertDescription>
-          </Alert>
-        )}
+        {/* Alerts removed: using toast popups instead */}
 
         {/* Stats Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">

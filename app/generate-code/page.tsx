@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { QrCode, RefreshCw, Clock, User, Loader2, CheckCircle, AlertCircle } from "lucide-react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
+import { toast } from "@/hooks/use-toast"
 
 interface VotingSession {
   id: string
@@ -17,6 +18,7 @@ interface VotingSession {
   isValidated: boolean
   isUsed: boolean
   expiresAt: string
+  createdAt?: string
 }
 
 interface MeUser {
@@ -121,14 +123,17 @@ export default function GenerateCodePage() {
     checkAuthAndData()
   }, [router])
 
-  // Update time remaining every second
+  // Update time remaining every second with hard 5-minute cap
   useEffect(() => {
     if (!votingSession) return
 
     const updateTime = () => {
       const now = new Date()
-      const expiresAt = new Date(votingSession.expiresAt)
-      const diff = expiresAt.getTime() - now.getTime()
+      const serverExpiresAt = new Date(votingSession.expiresAt)
+      const createdAt = votingSession.createdAt ? new Date(votingSession.createdAt) : new Date(serverExpiresAt.getTime() - 5 * 60 * 1000)
+      const hardMaxExpires = new Date(createdAt.getTime() + 5 * 60 * 1000)
+      const effectiveExpires = hardMaxExpires < serverExpiresAt ? hardMaxExpires : serverExpiresAt
+      const diff = effectiveExpires.getTime() - now.getTime()
 
       if (diff <= 0) {
         setTimeRemaining("Expired")
@@ -182,13 +187,14 @@ export default function GenerateCodePage() {
       }
     }
 
-    const interval = setInterval(checkValidation, 3000) // Check every 3 seconds
+    const interval = setInterval(checkValidation, 8000) // Check every 3 seconds
     return () => clearInterval(interval)
   }, [votingSession, router])
 
   const generateQRCode = async () => {
     if (!user) {
       setError("User data tidak tersedia")
+      toast({ title: "Data Tidak Tersedia", description: "User data tidak tersedia" })
       return
     }
 
@@ -221,6 +227,7 @@ export default function GenerateCodePage() {
       if (data.session) {
         setVotingSession(data.session)
         setSuccess("QR Code berhasil dibuat!")
+        toast({ title: "Berhasil", description: "QR code dan kode redeem berhasil dibuat" })
       } else {
         throw new Error('Invalid response format')
       }
@@ -228,6 +235,7 @@ export default function GenerateCodePage() {
       console.error('Generate QR error:', err)
       const errorMessage = err instanceof Error ? err.message : "Terjadi kesalahan saat membuat kode QR"
       setError(errorMessage)
+      toast({ title: "Gagal Membuat Kode", description: errorMessage })
     } finally {
       setGenerating(false)
     }
@@ -307,22 +315,7 @@ export default function GenerateCodePage() {
           </div>
         </div>
 
-        {/* Alert Messages */}
-        <div className="mb-6 space-y-4">
-          {success && (
-            <Alert className="bg-green-50 border-green-200">
-              <CheckCircle className="h-4 w-4 text-green-600" />
-              <AlertDescription className="text-green-800">{success}</AlertDescription>
-            </Alert>
-          )}
-
-          {error && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-        </div>
+        {/* Alerts removed in favor of toast popups for generate action */}
 
         {/* User Info */}
         {user && (

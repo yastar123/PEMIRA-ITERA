@@ -54,7 +54,17 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (session.expiresAt < new Date()) {
+    // Enforce strict 5-minute window from creation time
+    const maxExpiry = new Date(session.createdAt.getTime() + 5 * 60 * 1000)
+    const now = new Date()
+    if (now > maxExpiry) {
+      return NextResponse.json(
+        { error: 'Session has expired' },
+        { status: 400 }
+      )
+    }
+
+    if (session.expiresAt < now) {
       return NextResponse.json(
         { error: 'Session has expired' },
         { status: 400 }
@@ -76,7 +86,9 @@ export async function POST(request: NextRequest) {
       data: {
         isValidated: true,
         validatedBy: admin.id,
-        validatedAt: validatedAt
+        validatedAt: validatedAt,
+        // Clamp stored expiresAt to not exceed the 5-minute window
+        expiresAt: session.expiresAt > maxExpiry ? maxExpiry : session.expiresAt
       },
       include: {
         user: {

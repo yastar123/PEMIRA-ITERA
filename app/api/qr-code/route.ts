@@ -46,38 +46,53 @@ export async function POST(request: NextRequest) {
     if (existingSession) {
       console.log('Returning existing session')
 
-      // Create JSON data for QR code
-      const qrCodeData = {
-        userId: existingSession.userId,
-        redeemCode: existingSession.redeemCode,
-        sessionId: existingSession.id,
-        timestamp: existingSession.createdAt.getTime()
+      // Enforce max 5-minute validity from creation time
+      const maxExpiry = new Date(existingSession.createdAt.getTime() + 5 * 60 * 1000)
+      if (maxExpiry <= new Date()) {
+        // Existing session has exceeded the 5-minute window; delete and create a new one
+        await prisma.votingSession.delete({ where: { id: existingSession.id } })
+      } else {
+        // Clamp expiresAt to not exceed maxExpiry
+        let effectiveSession = existingSession
+        if (existingSession.expiresAt > maxExpiry) {
+          effectiveSession = await prisma.votingSession.update({
+            where: { id: existingSession.id },
+            data: { expiresAt: maxExpiry },
+          })
+        }
+
+        // Create JSON data for QR code
+        const qrCodeData = {
+          userId: effectiveSession.userId,
+          redeemCode: effectiveSession.redeemCode,
+          sessionId: effectiveSession.id,
+          timestamp: effectiveSession.createdAt.getTime()
+        }
+
+        // Return existing session if still within 5 minutes
+        const qrCodeDataURL = await QRCode.toDataURL(JSON.stringify(qrCodeData), {
+          errorCorrectionLevel: 'M',
+          margin: 1,
+          width: 200,
+          color: {
+            dark: '#000000',
+            light: '#FFFFFF'
+          }
+        })
+
+        return NextResponse.json({
+          session: {
+            id: effectiveSession.id,
+            qrCode: effectiveSession.qrCode,
+            redeemCode: effectiveSession.redeemCode,
+            qrCodeImage: qrCodeDataURL,
+            isValidated: effectiveSession.isValidated,
+            isUsed: effectiveSession.isUsed,
+            createdAt: effectiveSession.createdAt.toISOString(),
+            expiresAt: effectiveSession.expiresAt.toISOString()
+          }
+        })
       }
-
-      // Return existing session if still valid
-      const qrCodeDataURL = await QRCode.toDataURL(JSON.stringify(qrCodeData), {
-        errorCorrectionLevel: 'M',
-        type: 'image/png',
-        quality: 0.92,
-        margin: 1,
-        width: 200,
-        color: {
-          dark: '#000000',
-          light: '#FFFFFF'
-        }
-      })
-
-      return NextResponse.json({
-        session: {
-          id: existingSession.id,
-          qrCode: existingSession.qrCode,
-          redeemCode: existingSession.redeemCode,
-          qrCodeImage: qrCodeDataURL,
-          isValidated: existingSession.isValidated,
-          isUsed: existingSession.isUsed,
-          expiresAt: existingSession.expiresAt.toISOString()
-        }
-      })
     }
 
     console.log('Creating new session...')
@@ -87,7 +102,7 @@ export async function POST(request: NextRequest) {
     const randomString = crypto.randomUUID().replace(/-/g, '').substring(0, 8).toUpperCase()
     const qrCode = `ITERA${timestamp}${randomString}` // Keep this for database
     const redeemCode = crypto.randomUUID().replace(/-/g, '').substring(0, 8).toUpperCase()
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours from now
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000) // 5 minutes from now
 
     console.log('Generated codes:', { qrCode, redeemCode })
 
@@ -126,8 +141,6 @@ export async function POST(request: NextRequest) {
     console.log('Generating QR code image with JSON data...')
     const qrCodeDataURL = await QRCode.toDataURL(JSON.stringify(qrCodeData), {
       errorCorrectionLevel: 'M',
-      type: 'image/png',
-      quality: 0.92,
       margin: 1,
       width: 200,
       color: {
@@ -146,6 +159,7 @@ export async function POST(request: NextRequest) {
         qrCodeImage: qrCodeDataURL,
         isValidated: session.isValidated,
         isUsed: session.isUsed,
+        createdAt: session.createdAt.toISOString(),
         expiresAt: session.expiresAt.toISOString()
       }
     }
@@ -180,7 +194,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get current voting session
-    const session = await prisma.votingSession.findFirst({
+    let session = await prisma.votingSession.findFirst({
       where: {
         userId: user.id,
         expiresAt: {
@@ -198,6 +212,20 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // Enforce 5-minute window for existing sessions
+    const maxExpiry = new Date(session.createdAt.getTime() + 5 * 60 * 1000)
+    if (maxExpiry <= new Date()) {
+      // Treat as expired
+      try { await prisma.votingSession.delete({ where: { id: session.id } }) } catch {}
+      return NextResponse.json(
+        { error: 'No active voting session found' },
+        { status: 404 }
+      )
+    }
+    if (session.expiresAt > maxExpiry) {
+      session = await prisma.votingSession.update({ where: { id: session.id }, data: { expiresAt: maxExpiry } })
+    }
+
     // Create JSON data for QR code
     const qrCodeData = {
       userId: session.userId,
@@ -209,8 +237,6 @@ export async function GET(request: NextRequest) {
     // Generate QR code image with JSON data
     const qrCodeDataURL = await QRCode.toDataURL(JSON.stringify(qrCodeData), {
       errorCorrectionLevel: 'M',
-      type: 'image/png',
-      quality: 0.92,
       margin: 1,
       width: 200,
       color: {
@@ -227,6 +253,7 @@ export async function GET(request: NextRequest) {
         qrCodeImage: qrCodeDataURL,
         isValidated: session.isValidated,
         isUsed: session.isUsed,
+        createdAt: session.createdAt.toISOString(),
         expiresAt: session.expiresAt.toISOString()
       }
     })
